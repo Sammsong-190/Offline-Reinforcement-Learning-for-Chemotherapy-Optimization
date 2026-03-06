@@ -1,0 +1,47 @@
+"""
+Robustness utilities: seeds, parameter-shift evaluation
+"""
+import os
+import random
+import numpy as np
+
+
+def set_seed(seed=42):
+    """Set random seeds for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    try:
+        import torch
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+    except ImportError:
+        pass
+    # Reduce nondeterminism (optional)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+
+
+def rollout_param_shift(policy_fn, n_patients=50, n_ep_per_patient=2, params_base=None):
+    """
+    Robust evaluation: test policy on randomized patients (parameter shift).
+    Returns (mean_return, std_return) across different patient parameters.
+    """
+    from env.chemo_env import step_ode, reward_fn, DT, MAX_STEPS, X0, T_CLEAR
+    from env.patient import randomize_params
+
+    params_base = params_base or __import__("env.chemo_env", fromlist=["DEFAULT_PARAMS"]).DEFAULT_PARAMS
+    all_returns = []
+    for _ in range(n_patients):
+        params = randomize_params(params_base, scale=0.15)
+        for _ in range(n_ep_per_patient):
+            x = np.array(X0, dtype=np.float32)
+            R = 0.0
+            for _ in range(MAX_STEPS):
+                x_prev = x.copy()
+                a = policy_fn(x)
+                x = step_ode(x, a, DT, params)
+                R += reward_fn(x, DT)
+                if x[1] < T_CLEAR or x[0] < 0.1 or x[2] < 0.1:
+                    break
+            all_returns.append(R)
+    return np.mean(all_returns), np.std(all_returns)

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Data & models
+*.npz
+*.csv
+*.pt
+*.d3
+bc_policy.pt
+cql_model.d3
+offline_dataset.*
+
+# Logs
+d3rlpy_logs/
+
+# Experiment outputs
+experiments/results/
+experiments/figures/
+
+# IDE
+.idea/
+.vscode/
+*.swp
