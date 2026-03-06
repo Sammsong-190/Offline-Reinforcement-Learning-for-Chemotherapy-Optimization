@@ -172,7 +172,7 @@ $$
 \text{timeout} \Leftrightarrow (\text{step} = \text{MAX\_STEPS}-1) \land \neg\text{done}
 $$
 
-- \(\text{MAX\_STEPS} = 250\)（肿瘤动力学较慢）
+- \(\text{MAX\_STEPS} = 300\)（肿瘤动力学较慢，250 步不足）
 
 ---
 
@@ -198,19 +198,19 @@ $$
 
 ### 6.1 专家策略（Expert，ε-greedy）
 
-以概率 \(\varepsilon\) 随机选动作，否则：
+以概率 \(\varepsilon\) 随机选动作，否则（T-based 更激进）：
 
 $$
 \pi_{expert}(s) = \begin{cases}
-0 & T < 10^{-6} \\
-0.5 & N < 0.4 \lor I < 0.4 \\
-1.0 & N < 0.5 \lor I < 0.5 \\
-2.0 & N > 0.65 \land I > 0.65 \land T > 0.4 \\
-1.0 & \text{else}
+0 & T < 0.02 \lor N < 0.2 \lor I < 0.2 \\
+2.0 & T > 0.5 \\
+1.0 & T > 0.3 \\
+0.5 & T > 0.1 \\
+0 & \text{else}
 \end{cases}
 $$
 
-- 默认 \(\varepsilon = 0.2\)
+- 默认 \(\varepsilon = 0.2\)，更多 aggressive therapy 利于 Offline RL
 
 ### 6.2 保守策略（Conservative）
 

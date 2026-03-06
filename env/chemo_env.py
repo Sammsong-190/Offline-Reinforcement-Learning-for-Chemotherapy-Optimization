@@ -17,7 +17,7 @@ DEFAULT_PARAMS = {
 }
 
 DT = 0.3
-MAX_STEPS = 250  # tumor dynamics are slow
+MAX_STEPS = 300  # tumor dynamics are slow; 250 insufficient (Tctrl=75)
 X0 = [1.0, 0.7, 1.0, 0.0]
 ACTION_SPACE = np.array([0.0, 0.5, 1.0, 2.0], dtype=np.float32)
 ACTION_TO_IDX = {float(a): i for i, a in enumerate(ACTION_SPACE)}

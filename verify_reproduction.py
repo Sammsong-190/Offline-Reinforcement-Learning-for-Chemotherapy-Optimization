@@ -3,6 +3,15 @@ Verify reproduction: compare BC vs Expert vs Random vs Fixed-dose baselines
 """
 import warnings
 warnings.filterwarnings("ignore", message="Gym has been unmaintained")
+warnings.filterwarnings("ignore", category=UserWarning, module="gym")
+
+# Optional: use gymnasium as gym for d3rlpy (suppresses Gym deprecation warning)
+try:
+    import gymnasium as gym
+    import sys
+    sys.modules["gym"] = gym
+except ImportError:
+    pass
 
 from env.robust import set_seed, rollout_param_shift
 set_seed(42)

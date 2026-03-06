@@ -2,6 +2,15 @@
 IQL (Implicit Q-Learning) / BCQ baseline for offline RL
 d3rlpy IQL is continuous-only; we use DiscreteBCQ as discrete offline RL baseline.
 """
+import warnings
+warnings.filterwarnings("ignore", message="Gym has been unmaintained")
+try:
+    import gymnasium as gym
+    import sys
+    sys.modules["gym"] = gym
+except ImportError:
+    pass
+
 from env.robust import set_seed
 set_seed(42)
 

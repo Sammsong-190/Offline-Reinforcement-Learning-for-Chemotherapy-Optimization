@@ -24,20 +24,23 @@ def action_to_index(a):
 
 def expert_policy(s, epsilon=0.2):
     """
-    Aggressive expert: reward favors high dose (Fixed 2.0 >> Fixed 1.0).
-    Default 2.0 when T>0.2 and N,I>0.25; back off only when N or I critical.
+    Aggressive T-based expert: more aggressive therapy for larger tumors.
+    T>0.5: 2.0, T>0.3: 1.0, T>0.1: 0.5, else: 0.
+    Dataset will have more aggressive therapy -> better for Offline RL.
     """
     N, T, I, C = s[:4]
     if T < T_CLEAR:
         base = 0.0
     elif N < 0.2 or I < 0.2:
         base = 0.0  # critical: stop
-    elif N < 0.3 or I < 0.3:
-        base = 0.5  # risky: low dose
-    elif N < 0.4 or I < 0.4:
-        base = 1.0  # cautious
+    elif T > 0.5:
+        base = 2.0  # large tumor: aggressive
+    elif T > 0.3:
+        base = 1.0
+    elif T > 0.1:
+        base = 0.5
     else:
-        base = 2.0  # safe: aggressive (reward-optimal)
+        base = 0.0
 
     if np.random.rand() < epsilon:
         return float(np.random.choice(ACTION_SPACE))
