@@ -10,13 +10,16 @@
 
 ```bash
 pip install -r requirements.txt
-python generate_offline_data.py
-python train_offline.py
-python train_cql.py
+# v2 流程（推荐）：reward_v2 + 改进行为策略 + 自实现 CQL（无 d3rlpy 依赖）
+python generate_offline_data_v2.py
+python train_offline_v2.py
+python train_cql_native.py
 python verify_reproduction.py
 ```
 
 或一键运行：`bash run_all.sh`
+
+**备选**（使用 d3rlpy）：`generate_offline_data.py` → `train_offline.py` → `train_cql.py`。若 CQL 加载失败，可用 `train_cql_native.py` 替代。
 
 ---
 

@@ -88,3 +88,28 @@ def reward_fn(s, dt, s_prev=None):
     if T < T_CLEAR:
         r += 10.0  # tumor cleared bonus
     return r
+
+
+def reward_fn_v2(s, dt, s_prev=None):
+    """
+    Improved reward v2: progress shaping, stronger clearance, milestones.
+    Encourages tumor clearance (TumorClear > 0%).
+    """
+    N, T, I, C = s[:4]
+    cfg = {
+        "w_tumor": 3.0, "w_progress": 2.0, "w_normal": 0.5,
+        "w_immune": 2.0, "w_toxicity": 0.5, "R_clear": 50.0,
+        "C_ref": 2.0, "collapse": -20.0, "m5": 3.0, "m10": 5.0,
+    }
+    prev_T = s_prev[1] if s_prev is not None else T
+
+    tumor_penalty = -cfg["w_tumor"] * T * dt
+    progress = cfg["w_progress"] * (prev_T - T) * dt if s_prev is not None else 0.0
+    normal_reward = cfg["w_normal"] * N * dt
+    immune_penalty = -cfg["w_immune"] * max(0, 0.3 - I) * dt if I < 0.3 else 0.0
+    toxicity = -cfg["w_toxicity"] * np.tanh(C / cfg["C_ref"]) * dt
+    clearance = cfg["R_clear"] if T < T_CLEAR else 0.0
+    milestone = (cfg["m10"] if T < 0.1 else 0.0) + (cfg["m5"] if T < 0.05 else 0.0)
+    collapse = cfg["collapse"] if (N < 0.1 or I < 0.05) else 0.0
+
+    return tumor_penalty + progress + normal_reward + immune_penalty + toxicity + clearance + milestone + collapse

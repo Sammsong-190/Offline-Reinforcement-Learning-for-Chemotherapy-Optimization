@@ -79,12 +79,67 @@ def behavior_policy(s, expert_ratio=0.5, conservative_ratio=0.3, noisy_expert_ra
         return float(np.random.choice(ACTION_SPACE))
 
 
+def expert_policy_v2(s, epsilon=0.15):
+    """Improved expert: more aggressive, pursues clearance. C>5 or N/I critical -> stop."""
+    N, T, I, C = s[:4]
+    if np.random.random() < epsilon:
+        return float(np.random.choice(ACTION_SPACE))
+    if C > 5.0 or N < 0.15 or I < 0.15:
+        return 0.0
+    if T > 0.6:
+        return 2.0
+    if T > 0.3 and I > 0.3:
+        return 2.0 if np.random.random() < 0.5 else 1.0
+    if T > 0.1:
+        return 1.0
+    if T > 0.02:
+        return 0.5
+    return 0.0
+
+
+def balanced_policy(s):
+    """Balanced sampling: improve action distribution toward ~25% each."""
+    N, T, I, C = s[:4]
+    if C > 4.0 or N < 0.2:
+        weights = [0.7, 0.2, 0.1, 0.0]
+    elif T > 0.5:
+        weights = [0.05, 0.15, 0.35, 0.45]
+    elif T > 0.2:
+        weights = [0.1, 0.25, 0.40, 0.25]
+    else:
+        weights = [0.40, 0.35, 0.20, 0.05]
+    return float(np.random.choice(ACTION_SPACE, p=np.array(weights) / sum(weights)))
+
+
+def aggressive_policy(s):
+    """High-dose trajectories for clearance path exploration."""
+    N, T, I, C = s[:4]
+    if C > 6.0 or N < 0.1:
+        return 0.0
+    return 2.0 if T > 0.05 else 0.5
+
+
+def behavior_policy_v2(s, traj_type="expert"):
+    """Improved mix: expert 60%, balanced 20%, aggressive 10%, conservative 10%."""
+    if traj_type == "expert":
+        return expert_policy_v2(s, epsilon=0.15)
+    if traj_type == "balanced":
+        return balanced_policy(s)
+    if traj_type == "aggressive":
+        return aggressive_policy(s)
+    if traj_type == "conservative":
+        return float(discretize_action(conservative_policy(s)))
+    return float(np.random.choice(ACTION_SPACE))
+
+
 def _is_done(x):
     return is_done(x)
 
 
-def collect_trajectory(policy, params=None, x0=None, randomize_patient=False):
+def collect_trajectory(policy, params=None, x0=None, randomize_patient=False, reward_fn=None):
     """Collect one trajectory. done=natural end, timeout=hit MAX_STEPS (d3rlpy needs one)."""
+    from env.chemo_env import reward_fn as default_reward
+    reward_fn = reward_fn or default_reward
     params = randomize_params(params, scale=0.15) if randomize_patient else (params or DEFAULT_PARAMS)
     x = np.array(x0 or X0, dtype=np.float32)
     transitions = []
@@ -97,7 +152,7 @@ def collect_trajectory(policy, params=None, x0=None, randomize_patient=False):
         x_next = step_ode(x, a, DT, params)
         done = _is_done(x_next)
         timeout = (step == MAX_STEPS - 1) and not done  # hit max steps
-        r = reward_fn(x_next, DT, s_prev=x)  # includes terminal_bonus when T<1e-6
+        r = reward_fn(x_next, DT, s_prev=x)
         s_norm = normalize_state(s)
         s_next_norm = normalize_state(x_next)
         transitions.append({
@@ -120,6 +175,56 @@ def generate_dataset(n_trajectories=1000, policy=None, randomize_patient=True):
     for _ in range(n_trajectories):
         traj = collect_trajectory(policy, randomize_patient=randomize_patient)
         all_transitions.extend(traj)
+    return all_transitions
+
+
+def make_policy_for_traj(traj_type):
+    """Return policy function for given trajectory type (for v2 dataset)."""
+
+    def policy(s):
+        return behavior_policy_v2(s, traj_type)
+
+    return policy
+
+
+def generate_dataset_v2(
+    n_trajectories=500,
+    expert_ratio=0.60,
+    balanced_ratio=0.20,
+    aggressive_ratio=0.10,
+    conservative_ratio=0.10,
+    use_reward_v2=True,
+    randomize_patient=True,
+):
+    """
+    Improved dataset: 60% expert, 20% balanced, 10% aggressive, 10% conservative.
+    Balanced improves action distribution; aggressive explores clearance path.
+    """
+    from env.chemo_env import reward_fn_v2
+
+    traj_types = (
+        ["expert"] * int(n_trajectories * expert_ratio)
+        + ["balanced"] * int(n_trajectories * balanced_ratio)
+        + ["aggressive"] * int(n_trajectories * aggressive_ratio)
+        + ["conservative"] * int(n_trajectories * conservative_ratio)
+    )
+    np.random.shuffle(traj_types)
+
+    all_transitions = []
+    reward_fn = reward_fn_v2 if use_reward_v2 else None
+
+    for traj_type in traj_types:
+        policy = make_policy_for_traj(traj_type)
+        traj = collect_trajectory(
+            policy, randomize_patient=randomize_patient, reward_fn=reward_fn
+        )
+        all_transitions.extend(traj)
+
+    # Action distribution
+    a_idx = np.array([t["a_idx"] for t in all_transitions])
+    for i, val in enumerate([0.0, 0.5, 1.0, 2.0]):
+        pct = (a_idx == i).mean() * 100
+        print(f"  Action {val}: {pct:.1f}%")
     return all_transitions
 
 

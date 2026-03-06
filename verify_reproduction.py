@@ -122,14 +122,16 @@ def policy_bc(net):
 
 
 def policy_cql(cql):
-    """Wrap CQL to policy_fn(s) -> dose"""
+    """Wrap CQL (d3rlpy or native) to policy_fn(s) -> dose"""
 
     def fn(s):
         s_norm = normalize_state(s)
         x = np.array(s_norm, dtype=np.float32).reshape(1, -1)
-        idx = cql.predict(x)[0]
+        idx = cql.predict(x)
         if isinstance(idx, np.ndarray):
-            idx = int(idx.item())
+            idx = int(idx.flat[0])
+        else:
+            idx = int(idx)
         return float(ACTION_SPACE[idx])
     return fn
 
@@ -159,25 +161,41 @@ def main():
     # 1b. Behavior (mixture policy used to generate data)
     run_policy("Behavior", behavior_policy)
 
-    # 2. BC (if exists)
+    # 2. BC (bc_policy.pt or bc_v2.pt)
     if os.path.exists("bc_policy.pt"):
         net = PolicyNet()
         net.load_state_dict(torch.load("bc_policy.pt", map_location="cpu"))
         net.eval()
         run_policy("BC", policy_bc(net))
+    elif os.path.exists("bc_v2.pt"):
+        from models_v2 import ImprovedPolicyNet
+        net = ImprovedPolicyNet(state_dim=4, action_dim=4, hidden=128)
+        net.load_state_dict(torch.load("bc_v2.pt", map_location="cpu"))
+        net.eval()
+        run_policy("BC-v2", policy_bc(net))
     else:
         print("BC:          (no bc_policy.pt, run train_offline.py first)")
 
-    # 2b. CQL (if exists)
+    # 2b. CQL (d3rlpy or native)
+    cql_loaded = False
     if os.path.exists("cql_model.d3"):
         try:
             import d3rlpy
             cql = d3rlpy.load_learnable("cql_model.d3")
             run_policy("CQL", policy_cql(cql))
+            cql_loaded = True
         except Exception as e:
-            print(f"CQL:         (load failed: {e})")
-    else:
-        print("CQL:         (no cql_model.d3, run train_cql.py first)")
+            print(f"CQL (d3rlpy): (load failed: {e})")
+    if not cql_loaded and os.path.exists("cql_native.pt"):
+        try:
+            from cql_agent import DiscreteCQL
+            cql = DiscreteCQL(state_dim=4, action_dim=4)
+            cql.load("cql_native.pt")
+            run_policy("CQL", policy_cql(cql))
+        except Exception as e:
+            print(f"CQL (native): (load failed: {e})")
+    if not cql_loaded and not os.path.exists("cql_native.pt"):
+        print("CQL:         (no cql_model.d3 or cql_native.pt, run train_cql.py or train_cql_native.py)")
 
     # 2c. IQL/BCQ baseline (if exists)
     if os.path.exists("iql_model.d3"):
@@ -234,6 +252,15 @@ def main():
                 print(f"  CQL        Return={mean:8.2f}±{std:.2f}")
             except Exception:
                 pass
+        if os.path.exists("cql_native.pt"):
+            try:
+                from cql_agent import DiscreteCQL
+                cql = DiscreteCQL(state_dim=4, action_dim=4)
+                cql.load("cql_native.pt")
+                mean, std = rollout_param_shift(policy_cql(cql), n_patients=100, n_ep_per_patient=1, scale=0.15)
+                print(f"  CQL(native) Return={mean:8.2f}±{std:.2f}")
+            except Exception:
+                pass
         if os.path.exists("iql_model.d3"):
             try:
                 import d3rlpy
@@ -260,6 +287,15 @@ def main():
                 print(f"  CQL        Return={mean:8.2f}±{std:.2f}")
             except Exception:
                 pass
+        if os.path.exists("cql_native.pt"):
+            try:
+                from cql_agent import DiscreteCQL
+                cql = DiscreteCQL(state_dim=4, action_dim=4)
+                cql.load("cql_native.pt")
+                mean, std = rollout_param_shift(policy_cql(cql), n_patients=50, n_ep_per_patient=1, scale=0.30)
+                print(f"  CQL(native) Return={mean:8.2f}±{std:.2f}")
+            except Exception:
+                pass
         if os.path.exists("iql_model.d3"):
             try:
                 import d3rlpy
@@ -272,37 +308,38 @@ def main():
 
     # Verdict
     print("\n" + "=" * 50)
-    if os.path.exists("bc_policy.pt"):
-        bc_mean = next(r[1] for r in results if r[0] == "BC")
-        expert_mean = next(r[1] for r in results if r[0] == "Expert")
-        random_mean = next(r[1] for r in results if r[0] == "Random")
-        tol = 0.5
-        bc_approx_expert = abs(bc_mean - expert_mean) < tol
-        bc_beats_random = bc_mean > random_mean
-        if bc_approx_expert:
-            print("=> Reproduction SUCCESS: BC ≈ Expert (imitation achieved)")
-            if bc_beats_random:
-                print("   (BC also > Random)")
+    if os.path.exists("bc_policy.pt") or os.path.exists("bc_v2.pt"):
+        bc_mean = next((r[1] for r in results if r[0] in ("BC", "BC-v2")), None)
+        if bc_mean is not None:
+            expert_mean = next(r[1] for r in results if r[0] == "Expert")
+            random_mean = next(r[1] for r in results if r[0] == "Random")
+            tol = 0.5
+            bc_approx_expert = abs(bc_mean - expert_mean) < tol
+            bc_beats_random = bc_mean > random_mean
+            if bc_approx_expert:
+                print("=> Reproduction SUCCESS: BC ≈ Expert (imitation achieved)")
+                if bc_beats_random:
+                    print("   (BC also > Random)")
+                else:
+                    print("   (Random may beat BC when it luckily picks optimal dose)")
+            elif bc_beats_random:
+                print("=> Reproduction PARTIAL: BC > Random but BC ≠ Expert")
             else:
-                print("   (Random may beat BC when it luckily picks optimal dose)")
-        elif bc_beats_random:
-            print("=> Reproduction PARTIAL: BC > Random but BC ≠ Expert")
-        else:
-            print("=> Reproduction FAIL: BC << Expert and BC <= Random")
-        # CQL vs BC
-        if any(r[0] == "CQL" for r in results):
-            cql_mean = next(r[1] for r in results if r[0] == "CQL")
-            if cql_mean > bc_mean:
-                print(f"   CQL > BC ({cql_mean:.2f} vs {bc_mean:.2f})")
-            else:
-                print(f"   BC >= CQL ({bc_mean:.2f} vs {cql_mean:.2f})")
-        # IQL vs BC
-        if any(r[0] == "IQL" for r in results):
-            iql_mean = next(r[1] for r in results if r[0] == "IQL")
-            if iql_mean > bc_mean:
-                print(f"   IQL > BC ({iql_mean:.2f} vs {bc_mean:.2f})")
-            else:
-                print(f"   BC >= IQL ({bc_mean:.2f} vs {iql_mean:.2f})")
+                print("=> Reproduction FAIL: BC << Expert and BC <= Random")
+            # CQL vs BC
+            if any(r[0] == "CQL" for r in results):
+                cql_mean = next(r[1] for r in results if r[0] == "CQL")
+                if cql_mean > bc_mean:
+                    print(f"   CQL > BC ({cql_mean:.2f} vs {bc_mean:.2f})")
+                else:
+                    print(f"   BC >= CQL ({bc_mean:.2f} vs {cql_mean:.2f})")
+            # IQL vs BC
+            if any(r[0] == "IQL" for r in results):
+                iql_mean = next(r[1] for r in results if r[0] == "IQL")
+                if iql_mean > bc_mean:
+                    print(f"   IQL > BC ({iql_mean:.2f} vs {bc_mean:.2f})")
+                else:
+                    print(f"   BC >= IQL ({bc_mean:.2f} vs {iql_mean:.2f})")
     print("=" * 50)
 
 
