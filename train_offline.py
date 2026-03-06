@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from env.chemo_env import step_ode, DEFAULT_PARAMS, normalize_state, reward_fn, T_CLEAR
+from env.chemo_env import step_ode, DEFAULT_PARAMS, normalize_state, reward_fn, T_CLEAR, is_done
 from env.chemo_env import DT, MAX_STEPS, X0, ACTION_SPACE
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -91,7 +91,7 @@ def evaluate_policy(net, n_ep=10):
                 a = float(ACTION_SPACE[idx])
                 x = step_ode(x, a, DT, DEFAULT_PARAMS)
                 R += reward_fn(x, DT, s_prev=x_prev)
-                if x[1] < T_CLEAR or x[0] < 0.1 or x[2] < 0.1:
+                if is_done(x):
                     break
             returns.append(R)
     print(f"Mean return: {np.mean(returns):.4f} ± {np.std(returns):.4f}")

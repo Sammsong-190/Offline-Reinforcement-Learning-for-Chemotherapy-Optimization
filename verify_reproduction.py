@@ -10,7 +10,7 @@ set_seed(42)
 import numpy as np
 from env.chemo_env import (
     step_ode, DEFAULT_PARAMS, reward_fn,
-    DT, MAX_STEPS, X0, ACTION_SPACE, normalize_state, T_CLEAR,
+    DT, MAX_STEPS, X0, ACTION_SPACE, normalize_state, T_CLEAR, is_done,
 )
 from data.generate import expert_policy, behavior_policy
 
@@ -27,38 +27,51 @@ def rollout(policy_fn, n_ep=10, params=None, use_enhanced_reward=True):
             a = policy_fn(x)
             x = step_ode(x, a, DT, params)
             R += reward_fn(x, DT, s_prev=x_prev if use_enhanced_reward else None)
-            if x[1] < T_CLEAR or x[0] < 0.1 or x[2] < 0.1:
+            if is_done(x):
                 break
         returns.append(R)
     return np.mean(returns), np.std(returns)
 
 
+T_CONTROL_THRESH = 0.05  # tumor "control" threshold for time-to-control metric
+
+
 def rollout_with_metrics(policy_fn, n_ep=10, params=None):
     """Rollout and return (mean_return, std_return, tumor_clear, survival, avg_dose,
-       avg_tumor, max_toxicity, drug_usage)"""
+       avg_tumor, max_toxicity, drug_usage, treatment_efficiency, time_to_control)"""
     params = params or DEFAULT_PARAMS
     returns, tumor_clears, survivals, doses = [], [], [], []
     final_tumors, max_toxicities, drug_usages = [], [], []
+    treatment_effs, times_to_control = [], []
+    tumor_start = X0[1]  # 0.7
     for _ in range(n_ep):
         x = np.array(X0, dtype=np.float32)
         R, actions = 0.0, []
         toxics = []
+        t_control = np.nan  # step*DT when T first < T_CONTROL_THRESH
         for step in range(MAX_STEPS):
             x_prev = x.copy()
             a = policy_fn(x)
             actions.append(float(a))
             x = step_ode(x, a, DT, params)
             toxics.append(x[3])
+            if np.isnan(t_control) and x[1] < T_CONTROL_THRESH:
+                t_control = step * DT
             R += reward_fn(x, DT, s_prev=x_prev)
-            if x[1] < T_CLEAR or x[0] < 0.1 or x[2] < 0.1:
+            if is_done(x):
                 break
         returns.append(R)
         tumor_clears.append(1.0 if x[1] < T_CLEAR else 0.0)
         survivals.append(1.0 if (x[0] > 0.1 and x[2] > 0.1) else 0.0)
         doses.append(np.mean(actions) if actions else 0.0)
-        final_tumors.append(x[1])  # FinalTumor
+        final_tumors.append(x[1])
         max_toxicities.append(np.max(toxics) if toxics else 0.0)
+        drug_total = np.sum(actions) * DT if actions else 0.0
         drug_usages.append(np.sum(actions) if actions else 0.0)
+        # Treatment Efficiency: (Tumor_start - Tumor_end) / sum(u_t)
+        eff = (tumor_start - x[1]) / (drug_total + 1e-8) if drug_total > 0 else 0.0
+        treatment_effs.append(eff)
+        times_to_control.append(t_control if not np.isnan(t_control) else MAX_STEPS * DT)
     return (
         np.mean(returns), np.std(returns),
         np.mean(tumor_clears) * 100,
@@ -67,6 +80,8 @@ def rollout_with_metrics(policy_fn, n_ep=10, params=None):
         np.mean(final_tumors),
         np.mean(max_toxicities),
         np.mean(drug_usages),
+        np.mean(treatment_effs),
+        np.mean(times_to_control),
     )
 
 
@@ -121,12 +136,12 @@ def main():
 
     def run_policy(name, policy_fn):
         if use_metrics:
-            mean, std, tc, surv, dose, avg_t, max_c, drug = rollout_with_metrics(policy_fn, n_ep=n_ep)
-            results.append((name, mean, std, tc, surv, dose, avg_t, max_c, drug))
-            print(f"{name:12} Return={mean:8.2f}±{std:.2f}  TumorClear={tc:.0f}%  Survival={surv:.0f}%  AvgDose={dose:.2f}")
+            mean, std, tc, surv, dose, avg_t, max_c, drug, eff, t_ctrl = rollout_with_metrics(policy_fn, n_ep=n_ep)
+            results.append((name, mean, std, tc, surv, dose, avg_t, max_c, drug, eff, t_ctrl))
+            print(f"{name:12} Return={mean:8.2f}±{std:.2f}  TumorClear={tc:.0f}%  Survival={surv:.0f}%  AvgDose={dose:.2f}  Eff={eff:.3f}  Tctrl={t_ctrl:.1f}")
         else:
             mean, std = rollout(policy_fn, n_ep=n_ep)
-            results.append((name, mean, std, None, None, None, None, None, None))
+            results.append((name, mean, std, None, None, None, None, None, None, None, None))
             print(f"{name:12} {mean:8.2f} ± {std:.2f}")
 
     # 1. Expert (deterministic)
@@ -182,31 +197,31 @@ def main():
 
     # Metrics table (if available)
     if use_metrics and any(r[3] is not None for r in results):
-        print("\n" + "-" * 95)
-        print(f"{'Policy':<12} {'Return':>8} {'TumorClear':>10} {'Survival':>8} {'AvgDose':>8} {'FinalT':>8} {'MaxTox':>7} {'DrugUse':>8}")
-        print("-" * 95)
+        print("\n" + "-" * 115)
+        print(f"{'Policy':<12} {'Return':>8} {'TumorClear':>10} {'Survival':>8} {'AvgDose':>8} {'FinalT':>8} {'MaxTox':>7} {'DrugUse':>8} {'TrtEff':>8} {'Tctrl':>7}")
+        print("-" * 115)
         for r in results:
             if r[3] is not None:
-                print(f"{r[0]:<12} {r[1]:>8.2f} {r[3]:>9.0f}% {r[4]:>7.0f}% {r[5]:>8.2f} {r[6]:>8.3f} {r[7]:>7.3f} {r[8]:>8.1f}")
-        print("-" * 95)
+                print(f"{r[0]:<12} {r[1]:>8.2f} {r[3]:>9.0f}% {r[4]:>7.0f}% {r[5]:>8.2f} {r[6]:>8.3f} {r[7]:>7.3f} {r[8]:>8.1f} {r[9]:>8.3f} {r[10]:>7.1f}")
+        print("-" * 115)
 
-    # 6. Parameter-shift robustness: 100 NEW patients (seed 123, distinct from train seed 42)
+    # 6. Parameter-shift: In-Dist (σ=0.15) vs OOD (σ=0.30)
     if use_metrics:
-        print("\n--- Robust Eval: 100 new patients × 1 ep (test seed) ---")
-        set_seed(123)  # test patients != train patients
-        mean, std = rollout_param_shift(policy_expert, n_patients=100, n_ep_per_patient=1)
+        print("\n--- Robust Eval: 100 patients (In-Dist σ=0.15) ---")
+        set_seed(123)
+        mean, std = rollout_param_shift(policy_expert, n_patients=100, n_ep_per_patient=1, scale=0.15)
         print(f"  Expert     Return={mean:8.2f}±{std:.2f}")
         if os.path.exists("bc_policy.pt"):
             net = PolicyNet()
             net.load_state_dict(torch.load("bc_policy.pt", map_location="cpu"))
             net.eval()
-            mean, std = rollout_param_shift(policy_bc(net), n_patients=100, n_ep_per_patient=1)
+            mean, std = rollout_param_shift(policy_bc(net), n_patients=100, n_ep_per_patient=1, scale=0.15)
             print(f"  BC         Return={mean:8.2f}±{std:.2f}")
         if os.path.exists("cql_model.d3"):
             try:
                 import d3rlpy
                 cql = d3rlpy.load_learnable("cql_model.d3")
-                mean, std = rollout_param_shift(policy_cql(cql), n_patients=100, n_ep_per_patient=1)
+                mean, std = rollout_param_shift(policy_cql(cql), n_patients=100, n_ep_per_patient=1, scale=0.15)
                 print(f"  CQL        Return={mean:8.2f}±{std:.2f}")
             except Exception:
                 pass
@@ -214,11 +229,37 @@ def main():
             try:
                 import d3rlpy
                 iql = d3rlpy.load_learnable("iql_model.d3")
-                mean, std = rollout_param_shift(policy_cql(iql), n_patients=100, n_ep_per_patient=1)
+                mean, std = rollout_param_shift(policy_cql(iql), n_patients=100, n_ep_per_patient=1, scale=0.15)
                 print(f"  IQL        Return={mean:8.2f}±{std:.2f}")
             except Exception:
                 pass
-        set_seed(42)  # restore for reproducibility
+        print("\n--- OOD Eval: 50 patients (σ=0.30, out-of-distribution) ---")
+        set_seed(456)
+        mean, std = rollout_param_shift(policy_expert, n_patients=50, n_ep_per_patient=1, scale=0.30)
+        print(f"  Expert     Return={mean:8.2f}±{std:.2f}")
+        if os.path.exists("bc_policy.pt"):
+            net = PolicyNet()
+            net.load_state_dict(torch.load("bc_policy.pt", map_location="cpu"))
+            net.eval()
+            mean, std = rollout_param_shift(policy_bc(net), n_patients=50, n_ep_per_patient=1, scale=0.30)
+            print(f"  BC         Return={mean:8.2f}±{std:.2f}")
+        if os.path.exists("cql_model.d3"):
+            try:
+                import d3rlpy
+                cql = d3rlpy.load_learnable("cql_model.d3")
+                mean, std = rollout_param_shift(policy_cql(cql), n_patients=50, n_ep_per_patient=1, scale=0.30)
+                print(f"  CQL        Return={mean:8.2f}±{std:.2f}")
+            except Exception:
+                pass
+        if os.path.exists("iql_model.d3"):
+            try:
+                import d3rlpy
+                iql = d3rlpy.load_learnable("iql_model.d3")
+                mean, std = rollout_param_shift(policy_cql(iql), n_patients=50, n_ep_per_patient=1, scale=0.30)
+                print(f"  IQL        Return={mean:8.2f}±{std:.2f}")
+            except Exception:
+                pass
+        set_seed(42)
 
     # Verdict
     print("\n" + "=" * 50)

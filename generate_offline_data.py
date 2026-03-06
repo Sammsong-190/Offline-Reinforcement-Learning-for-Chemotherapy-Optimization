@@ -6,5 +6,5 @@ from data.generate import generate_dataset, save_dataset
 
 if __name__ == '__main__':
     set_seed(42)  # train patients
-    data = generate_dataset(n_trajectories=100)  # 100 patients for training
+    data = generate_dataset(n_trajectories=500)  # ~1e5 transitions for Offline RL
     save_dataset(data)

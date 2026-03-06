@@ -133,12 +133,15 @@ $$
 ### 3.1 奖励函数
 
 $$
-r = \left( -T - 0.8\tanh(C) - 0.5\sigma(I_{th}-I) \right) \Delta t + 5 \cdot \mathbb{1}_{T<0.02}
+r = \left( -2T - 0.3C - 0.5\sigma(I_{th}-I) + 0.3N \right) \Delta t + 10 \cdot \mathbb{1}_{T<0.02}
 $$
 
-- 毒性惩罚 0.8：避免 RL 一直高剂量
-- 肿瘤清除奖励 +5
-- \(T_{clear}=0.05\)：清除阈值（放宽以提升 TumorClear %）
+| 项 | 含义 |
+|----|------|
+| \(-2T\) | 强烈抑制肿瘤 |
+| \(-0.3C\) | 适度毒性 |
+| \(+0.3N\) | 保护正常细胞 |
+| \(+10\) | 肿瘤清除奖励 |
 
 ### 3.2 各项含义
 
@@ -156,10 +159,12 @@ $$
 ### 4.1 自然终止（done）
 
 $$
-\text{done} \Leftrightarrow (T < 0.05) \lor (N < 0.1) \lor (I < 0.1)
+\text{done} \Leftrightarrow (T < 0.02) \lor (N < 0.1) \lor (I < 0.1) \lor (C > 8) \lor (\max(\mathbf{x}) > 30)
 $$
 
-- \(T_{clear}=0.05\)：肿瘤清除阈值
+- \(T_{clear}=0.02\)：肿瘤清除
+- \(C_{tox}=8\)：毒性上限（安全约束）
+- \(\max(\mathbf{x})>30\)：ODE 爆炸保护
 
 ### 4.2 超时（timeout）
 

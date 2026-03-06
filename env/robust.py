@@ -21,18 +21,18 @@ def set_seed(seed=42):
     os.environ["PYTHONHASHSEED"] = str(seed)
 
 
-def rollout_param_shift(policy_fn, n_patients=50, n_ep_per_patient=2, params_base=None):
+def rollout_param_shift(policy_fn, n_patients=50, n_ep_per_patient=2, params_base=None, scale=0.15):
     """
-    Robust evaluation: test policy on randomized patients (parameter shift).
-    Returns (mean_return, std_return) across different patient parameters.
+    Robust evaluation: test policy on randomized patients.
+    scale: 0.15 = in-distribution, 0.30 = OOD (out-of-distribution).
     """
-    from env.chemo_env import step_ode, reward_fn, DT, MAX_STEPS, X0, T_CLEAR
+    from env.chemo_env import step_ode, reward_fn, DT, MAX_STEPS, X0, is_done
     from env.patient import randomize_params
 
     params_base = params_base or __import__("env.chemo_env", fromlist=["DEFAULT_PARAMS"]).DEFAULT_PARAMS
     all_returns = []
     for _ in range(n_patients):
-        params = randomize_params(params_base, scale=0.15)
+        params = randomize_params(params_base, scale=scale)
         for _ in range(n_ep_per_patient):
             x = np.array(X0, dtype=np.float32)
             R = 0.0
@@ -41,7 +41,7 @@ def rollout_param_shift(policy_fn, n_patients=50, n_ep_per_patient=2, params_bas
                 a = policy_fn(x)
                 x = step_ode(x, a, DT, params)
                 R += reward_fn(x, DT)
-                if x[1] < T_CLEAR or x[0] < 0.1 or x[2] < 0.1:
+                if is_done(x):
                     break
             all_returns.append(R)
     return np.mean(all_returns), np.std(all_returns)

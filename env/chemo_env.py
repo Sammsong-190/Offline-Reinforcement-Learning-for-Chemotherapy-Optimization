@@ -22,7 +22,15 @@ X0 = [1.0, 0.7, 1.0, 0.0]
 ACTION_SPACE = np.array([0.0, 0.5, 1.0, 2.0], dtype=np.float32)
 ACTION_TO_IDX = {float(a): i for i, a in enumerate(ACTION_SPACE)}
 I_THRESHOLD = 0.4
-T_CLEAR = 0.05  # tumor "cleared" for done/metric/bonus (relaxed for TumorClear %)
+T_CLEAR = 0.02  # tumor "cleared" for done/metric/bonus
+C_TOX = 8.0    # toxicity limit: C > C_tox -> terminate (safety constraint)
+STATE_MAX = 30.0  # ODE explosion guard: any state > 30 -> terminate
+
+
+def is_done(x):
+    """Tumor cleared | organ failure | immune collapse | toxicity limit | ODE explosion"""
+    T, N, I, C = x[1], x[0], x[2], x[3]
+    return (T < T_CLEAR) or (N < 0.1) or (I < 0.1) or (C > C_TOX) or (np.max(x) > STATE_MAX)
 
 
 def cancer_ode(t, x, u, params):
@@ -37,7 +45,7 @@ def cancer_ode(t, x, u, params):
 
 
 def step_ode(x, u, dt, params=None, n_sub=5):
-    """Euler integration with clip for numerical stability"""
+    """Euler integration with clip. State > STATE_MAX indicates ODE explosion."""
     params = params or DEFAULT_PARAMS
     h = dt / n_sub
     x = np.asarray(x, dtype=np.float64)
@@ -69,12 +77,14 @@ def _sigmoid(x):
 
 def reward_fn(s, dt, s_prev=None):
     """
-    r = -T - 0.8*tanh(C) - 0.5*sigmoid(I_th-I) + 5*(T<0.02)
-    Stronger toxicity penalty: RL avoids always high dose.
+    Paper-grade reward: r = (-2T - 0.3C - 0.5σ(Ith-I) + 0.3N)Δt + 10*1_{T<0.02}
+    -2T: strong tumor suppression
+    -0.3C: moderate toxicity (avoids "no treatment" optimal)
+    +0.3N: protect normal cells
     """
     N, T, I, C = s[:4]
-    r = -T - 0.8 * np.tanh(C) - 0.5 * _sigmoid(I_THRESHOLD - I)
+    r = -2.0 * T - 0.3 * C - 0.5 * _sigmoid(I_THRESHOLD - I) + 0.3 * N
     r = r * dt
     if T < T_CLEAR:
-        r += 5.0  # tumor cleared bonus
+        r += 10.0  # tumor cleared bonus
     return r

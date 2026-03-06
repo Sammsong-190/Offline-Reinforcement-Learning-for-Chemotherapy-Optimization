@@ -29,7 +29,7 @@ def run_ablation_dataset_size():
     """Dataset size: 10k, 25k, 50k, 100k transitions"""
     from data.generate import generate_dataset, save_dataset
     from train_offline import train_bc, PolicyNet
-    from env.chemo_env import step_ode, reward_fn, DEFAULT_PARAMS, DT, MAX_STEPS, X0, T_CLEAR
+    from env.chemo_env import step_ode, reward_fn, is_done, DEFAULT_PARAMS, DT, MAX_STEPS, X0, T_CLEAR
     from env.chemo_env import ACTION_SPACE, normalize_state
 
     sizes = [50, 100, 200, 500]  # trajectories -> ~12k, 25k, 50k, 125k transitions
@@ -54,7 +54,7 @@ def run_ablation_dataset_size():
                 a = float(ACTION_SPACE[idx])
                 x = step_ode(x, a, DT, DEFAULT_PARAMS)
                 R += reward_fn(x, DT)
-                if x[1] < T_CLEAR or x[0] < 0.1 or x[2] < 0.1:
+                if is_done(x):
                     break
             returns.append(R)
         mean_r = np.mean(returns)

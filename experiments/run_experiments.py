@@ -10,7 +10,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from env.robust import set_seed
-from env.chemo_env import step_ode, reward_fn, DEFAULT_PARAMS, DT, MAX_STEPS, X0, T_CLEAR
+from env.chemo_env import step_ode, reward_fn, DEFAULT_PARAMS, DT, MAX_STEPS, X0, T_CLEAR, is_done
 from env.patient import randomize_params
 
 set_seed(42)
@@ -37,7 +37,7 @@ def rollout_metrics(policy_fn, params, n_ep=5):
             x = step_ode(x, a, DT, params)
             toxics.append(x[3])
             R += reward_fn(x, DT)
-            if x[1] < T_CLEAR or x[0] < 0.1 or x[2] < 0.1:
+            if is_done(x):
                 break
         returns.append(R)
         final_t.append(x[1])
@@ -61,7 +61,7 @@ def toxicity_violation_rate(policy_fn, params, threshold=1.5, n_ep=20):
             a = policy_fn(x)
             x = step_ode(x, a, DT, params)
             max_c = max(max_c, x[3])
-            if x[1] < T_CLEAR or x[0] < 0.1 or x[2] < 0.1:
+            if is_done(x):
                 break
         if max_c > threshold:
             violations += 1

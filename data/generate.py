@@ -5,7 +5,7 @@ Paper: Supervised Optimal Chemotherapy Regimen Based on Offline Reinforcement Le
 
 import numpy as np
 from env.chemo_env import (
-    step_ode, DEFAULT_PARAMS, normalize_state, reward_fn,
+    step_ode, DEFAULT_PARAMS, normalize_state, reward_fn, is_done,
     DT, MAX_STEPS, X0, ACTION_SPACE, ACTION_TO_IDX, I_THRESHOLD, T_CLEAR,
 )
 from env.patient import randomize_params
@@ -60,25 +60,24 @@ def noisy_expert_policy(s, noise_std=0.2):
     return discretize_action(np.clip(u_cont, 0, 2.0))
 
 
-def behavior_policy(s, expert_ratio=0.85, conservative_ratio=0.10, use_noisy_expert=0.1):
+def behavior_policy(s, expert_ratio=0.5, conservative_ratio=0.3, noisy_expert_ratio=0.1):
     """
-    Expert-heavy mix for BC≈Expert: expert (85%), conservative (10%), random (5%).
-    use_noisy_expert: fraction of expert calls that use noisy_expert instead.
+    Suboptimal mix for Offline RL: expert 50%, conservative 30%, noisy expert 10%, random 10%.
+    More suboptimal data -> RL can surpass behavior.
     """
     p = np.random.rand()
     if p < expert_ratio:
-        if np.random.rand() < use_noisy_expert:
-            return float(noisy_expert_policy(s))
-        return expert_policy(s, epsilon=0.05)  # low epsilon for cleaner expert signal
+        return expert_policy(s, epsilon=0.1)
     elif p < expert_ratio + conservative_ratio:
         return float(discretize_action(conservative_policy(s)))
+    elif p < expert_ratio + conservative_ratio + noisy_expert_ratio:
+        return float(noisy_expert_policy(s))
     else:
         return float(np.random.choice(ACTION_SPACE))
 
 
 def _is_done(x):
-    T, N, I = x[1], x[0], x[2]
-    return (T < T_CLEAR) or (N < 0.1) or (I < 0.1)
+    return is_done(x)
 
 
 def collect_trajectory(policy, params=None, x0=None, randomize_patient=False):

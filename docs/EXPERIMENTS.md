@@ -10,6 +10,8 @@
 | MaxTox | 最大毒性 |
 | TumorClear | 治愈率 |
 | Survival | 生存率 |
+| **TrtEff** | Treatment Efficiency: (Tumor_start − Tumor_end) / ∑u_t |
+| **Tctrl** | Time to Tumor Control: 肿瘤首次降至阈值所需时间 |
 
 **运行**：`python -m experiments.run_experiments`
 

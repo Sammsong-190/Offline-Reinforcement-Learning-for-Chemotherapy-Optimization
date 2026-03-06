@@ -65,6 +65,6 @@ if __name__ == "__main__":
     if not os.path.exists("offline_dataset.npz"):
         from data.generate import generate_dataset, save_dataset
         set_seed(42)
-        data = generate_dataset(n_trajectories=100)
+        data = generate_dataset(n_trajectories=500)
         save_dataset(data)
     train_iql()
