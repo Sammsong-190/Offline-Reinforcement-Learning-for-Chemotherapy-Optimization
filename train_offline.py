@@ -48,8 +48,9 @@ def train_bc(data_path='offline_dataset.npz', epochs=200, lr=1e-3, batch=64, sav
         a = a_raw
     a = torch.LongTensor(a)
     # Diagnostic: action distribution (should be expert-heavy for BC≈Expert)
-    action_dist = np.bincount(a.numpy(), minlength=4) / len(a) * 100
-    print(f"Dataset action dist: {action_dist.round(1)}%")
+    # Use torch.bincount to avoid tensor->numpy (NumPy 2.x compat with PyTorch 2.2)
+    action_dist = (torch.bincount(a, minlength=4).float() / len(a) * 100).tolist()
+    print(f"Dataset action dist: {[round(x, 1) for x in action_dist]}%")
 
     ds = TensorDataset(s, a)
     loader = DataLoader(ds, batch_size=batch, shuffle=True)
