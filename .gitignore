@@ -12,9 +12,7 @@ venv/
 *.pt
 *.d3
 bc_policy.pt
-bc_v2.pt
 cql_model.d3
-cql_native.pt
 offline_dataset.*
 
 # Logs

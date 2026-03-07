@@ -10,16 +10,14 @@
 
 ```bash
 pip install -r requirements.txt
-# v2 流程（推荐）：reward_v2 + 改进行为策略 + 自实现 CQL（无 d3rlpy 依赖）
-python generate_offline_data_v2.py
-python train_offline_v2.py
-python train_cql_native.py
+python generate_offline_data.py
+python train_offline.py
+python train_cql.py   # 需 d3rlpy
+python train_iql.py   # IQL/BCQ 基线，需 d3rlpy
 python verify_reproduction.py
 ```
 
 或一键运行：`bash run_all.sh`
-
-**备选**（使用 d3rlpy）：`generate_offline_data.py` → `train_offline.py` → `train_cql.py`。若 CQL 加载失败，可用 `train_cql_native.py` 替代。
 
 ---
 
@@ -33,10 +31,10 @@ python verify_reproduction.py
 │   └── generate.py           # 数据生成（专家/混合策略）
 ├── generate_offline_data.py  # 数据生成入口
 ├── train_offline.py          # BC 训练
-├── train_cql.py              # CQL 训练（可选）
+├── train_cql.py              # CQL 训练（需 d3rlpy）
+├── train_iql.py              # IQL/BCQ 训练（可选）
 ├── verify_reproduction.py    # 策略对比验证
 ├── export_dataset.py         # 导出 npz → csv
-├── ode_model.py              # 兼容层
 ├── run_all.sh                # 一键运行
 ├── requirements.txt
 └── docs/
@@ -51,8 +49,9 @@ python verify_reproduction.py
 |------|------|------|
 | 1 | `generate_offline_data.py` | ODE + 混合策略 → 离线数据 |
 | 2 | `train_offline.py` | BC 模仿专家 |
-| 3 | `train_cql.py` | CQL 训练（可选） |
-| 4 | `verify_reproduction.py` | 对比 Expert / BC / CQL / Random / Fixed |
+| 3 | `train_cql.py` | CQL 训练（需 d3rlpy） |
+| 4 | `train_iql.py` | IQL/BCQ 基线（需 d3rlpy） |
+| 5 | `verify_reproduction.py` | 对比 Expert / BC / CQL / IQL / Random / Fixed |
 
 ---
 

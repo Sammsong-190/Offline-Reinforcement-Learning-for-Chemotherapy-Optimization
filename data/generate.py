@@ -5,8 +5,8 @@ Paper: Supervised Optimal Chemotherapy Regimen Based on Offline Reinforcement Le
 
 import numpy as np
 from env.chemo_env import (
-    step_ode, DEFAULT_PARAMS, normalize_state, reward_fn, is_done,
-    DT, MAX_STEPS, X0, ACTION_SPACE, ACTION_TO_IDX, I_THRESHOLD, T_CLEAR,
+    step_ode, DEFAULT_PARAMS, normalize_state, is_done,
+    DT, MAX_STEPS, X0, ACTION_SPACE, ACTION_TO_IDX, T_CLEAR,
 )
 from env.patient import randomize_params
 
@@ -22,65 +22,8 @@ def action_to_index(a):
     return ACTION_TO_IDX.get(float(a), int(np.argmin(np.abs(ACTION_SPACE - a))))
 
 
-def expert_policy(s, epsilon=0.2):
-    """
-    Aggressive T-based expert: more aggressive therapy for larger tumors.
-    T>0.5: 2.0, T>0.3: 1.0, T>0.1: 0.5, else: 0.
-    Dataset will have more aggressive therapy -> better for Offline RL.
-    """
-    N, T, I, C = s[:4]
-    if T < T_CLEAR:
-        base = 0.0
-    elif N < 0.2 or I < 0.2:
-        base = 0.0  # critical: stop
-    elif T > 0.5:
-        base = 2.0  # large tumor: aggressive
-    elif T > 0.3:
-        base = 1.0
-    elif T > 0.1:
-        base = 0.5
-    else:
-        base = 0.0
-
-    if np.random.rand() < epsilon:
-        return float(np.random.choice(ACTION_SPACE))
-    return base
-
-
-def conservative_policy(s):
-    """Cautious: low dose when uncertain."""
-    N, T, I, C = s[:4]
-    if N > 0.5 and I > 0.5 and T > 0.3:
-        return 0.5
-    return 0.0
-
-
-def noisy_expert_policy(s, noise_std=0.2):
-    """Expert + Gaussian noise, then discretize. Mimics real medical variability."""
-    a_expert = expert_policy(s, epsilon=0.0)
-    idx = action_to_index(a_expert)
-    u_cont = float(ACTION_SPACE[idx]) + np.random.normal(0, noise_std)
-    return discretize_action(np.clip(u_cont, 0, 2.0))
-
-
-def behavior_policy(s, expert_ratio=0.5, conservative_ratio=0.3, noisy_expert_ratio=0.1):
-    """
-    Suboptimal mix for Offline RL: expert 50%, conservative 30%, noisy expert 10%, random 10%.
-    More suboptimal data -> RL can surpass behavior.
-    """
-    p = np.random.rand()
-    if p < expert_ratio:
-        return expert_policy(s, epsilon=0.1)
-    elif p < expert_ratio + conservative_ratio:
-        return float(discretize_action(conservative_policy(s)))
-    elif p < expert_ratio + conservative_ratio + noisy_expert_ratio:
-        return float(noisy_expert_policy(s))
-    else:
-        return float(np.random.choice(ACTION_SPACE))
-
-
-def expert_policy_v2(s, epsilon=0.15):
-    """Improved expert: more aggressive, pursues clearance. C>5 or N/I critical -> stop."""
+def expert_policy(s, epsilon=0.15):
+    """Expert: aggressive, pursues clearance. C>5 or N/I critical -> stop."""
     N, T, I, C = s[:4]
     if np.random.random() < epsilon:
         return float(np.random.choice(ACTION_SPACE))
@@ -119,17 +62,26 @@ def aggressive_policy(s):
     return 2.0 if T > 0.05 else 0.5
 
 
-def behavior_policy_v2(s, traj_type="expert"):
-    """Improved mix: expert 60%, balanced 20%, aggressive 10%, conservative 10%."""
+def _policy_by_type(s, traj_type="expert"):
+    """Policy for given trajectory type (used by generate_dataset)."""
     if traj_type == "expert":
-        return expert_policy_v2(s, epsilon=0.15)
+        return expert_policy(s, epsilon=0.15)
     if traj_type == "balanced":
         return balanced_policy(s)
     if traj_type == "aggressive":
         return aggressive_policy(s)
     if traj_type == "conservative":
-        return float(discretize_action(conservative_policy(s)))
+        N, T, I, C = s[:4]
+        if N > 0.5 and I > 0.5 and T > 0.3:
+            return 0.5
+        return 0.0
     return float(np.random.choice(ACTION_SPACE))
+
+
+def behavior_policy(s):
+    """Mixture policy (60% expert, 20% balanced, 10% aggressive, 10% conservative). Used for verify baseline."""
+    t = np.random.choice(["expert", "balanced", "aggressive", "conservative"], p=[0.6, 0.2, 0.1, 0.1])
+    return _policy_by_type(s, t)
 
 
 def _is_done(x):
@@ -169,26 +121,16 @@ def collect_trajectory(policy, params=None, x0=None, randomize_patient=False, re
     return transitions
 
 
-def generate_dataset(n_trajectories=1000, policy=None, randomize_patient=True):
-    """Generate offline dataset. Default: mixture behavior policy for better coverage."""
-    policy = policy or behavior_policy
-    all_transitions = []
-    for _ in range(n_trajectories):
-        traj = collect_trajectory(policy, randomize_patient=randomize_patient)
-        all_transitions.extend(traj)
-    return all_transitions
-
-
-def make_policy_for_traj(traj_type):
-    """Return policy function for given trajectory type (for v2 dataset)."""
+def _policy_for_traj(traj_type):
+    """Return policy function for given trajectory type."""
 
     def policy(s):
-        return behavior_policy_v2(s, traj_type)
+        return _policy_by_type(s, traj_type)
 
     return policy
 
 
-def generate_dataset_v2(
+def generate_dataset(
     n_trajectories=500,
     expert_ratio=0.60,
     balanced_ratio=0.20,
@@ -198,7 +140,7 @@ def generate_dataset_v2(
     randomize_patient=True,
 ):
     """
-    Improved dataset: 60% expert, 20% balanced, 10% aggressive, 10% conservative.
+    Generate offline dataset: 60% expert, 20% balanced, 10% aggressive, 10% conservative.
     Balanced improves action distribution; aggressive explores clearance path.
     """
     from env.chemo_env import reward_fn_v2
@@ -215,7 +157,7 @@ def generate_dataset_v2(
     reward_fn = reward_fn_v2 if use_reward_v2 else None
 
     for traj_type in traj_types:
-        policy = make_policy_for_traj(traj_type)
+        policy = _policy_for_traj(traj_type)
         traj = collect_trajectory(
             policy, randomize_patient=randomize_patient, reward_fn=reward_fn
         )

@@ -223,15 +223,12 @@ $$
 
 ### 6.3 混合策略（Behavior）
 
-$$
-\pi_{behavior}(s) = \begin{cases}
-\pi_{expert}(s; \varepsilon=0.15) & p < 0.6 \\
-\pi_{conservative}(s) & 0.6 \le p < 0.85 \\
-\text{Uniform}(\mathcal{A}) & p \ge 0.85
-\end{cases}
-$$
+按轨迹类型采样：60% expert、20% balanced、10% aggressive、10% conservative。
 
-- \(p \sim \text{Uniform}(0,1)\)
+- **expert**：激进专家，追求清除
+- **balanced**：按状态加权采样，改善动作分布
+- **aggressive**：高剂量探索清除路径
+- **conservative**：谨慎低剂量
 
 ### 6.4 Noisy Expert（可选）
 

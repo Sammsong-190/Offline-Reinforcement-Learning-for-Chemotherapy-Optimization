@@ -83,8 +83,8 @@ def train_cql(data_path="offline_dataset.npz", n_epochs=50, save_path="cql_model
 
 if __name__ == "__main__":
     if not os.path.exists("offline_dataset.npz"):
-        from data.generate import generate_dataset_v2, save_dataset
+        from data.generate import generate_dataset, save_dataset
 
-        data = generate_dataset_v2(n_trajectories=500, use_reward_v2=True)
+        data = generate_dataset(n_trajectories=500, use_reward_v2=True)
         save_dataset(data)
     train_cql()

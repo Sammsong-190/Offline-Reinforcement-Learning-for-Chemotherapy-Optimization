@@ -163,41 +163,25 @@ def main():
     # 1b. Behavior (mixture policy used to generate data)
     run_policy("Behavior", behavior_policy)
 
-    # 2. BC (bc_policy.pt or bc_v2.pt)
+    # 2. BC (bc_policy.pt)
     if os.path.exists("bc_policy.pt"):
         net = PolicyNet()
         net.load_state_dict(torch.load("bc_policy.pt", map_location="cpu"))
         net.eval()
         run_policy("BC", policy_bc(net))
-    elif os.path.exists("bc_v2.pt"):
-        from models_v2 import ImprovedPolicyNet
-        net = ImprovedPolicyNet(state_dim=4, action_dim=4, hidden=128)
-        net.load_state_dict(torch.load("bc_v2.pt", map_location="cpu"))
-        net.eval()
-        run_policy("BC-v2", policy_bc(net))
     else:
         print("BC:          (no bc_policy.pt, run train_offline.py first)")
 
-    # 2b. CQL (d3rlpy or native)
-    cql_loaded = False
+    # 2b. CQL (d3rlpy)
     if os.path.exists("cql_model.d3"):
         try:
             import d3rlpy
             cql = d3rlpy.load_learnable("cql_model.d3")
             run_policy("CQL", policy_cql(cql))
-            cql_loaded = True
         except Exception as e:
-            print(f"CQL (d3rlpy): (load failed: {e})")
-    if not cql_loaded and os.path.exists("cql_native.pt"):
-        try:
-            from cql_agent import DiscreteCQL
-            cql = DiscreteCQL(state_dim=4, action_dim=4)
-            cql.load("cql_native.pt")
-            run_policy("CQL", policy_cql(cql))
-        except Exception as e:
-            print(f"CQL (native): (load failed: {e})")
-    if not cql_loaded and not os.path.exists("cql_native.pt"):
-        print("CQL:         (no cql_model.d3 or cql_native.pt, run train_cql.py or train_cql_native.py)")
+            print(f"CQL:         (load failed: {e})")
+    else:
+        print("CQL:         (no cql_model.d3, run train_cql.py)")
 
     # 2c. IQL/BCQ baseline (if exists)
     if os.path.exists("iql_model.d3"):
@@ -254,15 +238,6 @@ def main():
                 print(f"  CQL        Return={mean:8.2f}±{std:.2f}")
             except Exception:
                 pass
-        if os.path.exists("cql_native.pt"):
-            try:
-                from cql_agent import DiscreteCQL
-                cql = DiscreteCQL(state_dim=4, action_dim=4)
-                cql.load("cql_native.pt")
-                mean, std = rollout_param_shift(policy_cql(cql), n_patients=100, n_ep_per_patient=1, scale=0.15)
-                print(f"  CQL(native) Return={mean:8.2f}±{std:.2f}")
-            except Exception:
-                pass
         if os.path.exists("iql_model.d3"):
             try:
                 import d3rlpy
@@ -289,15 +264,6 @@ def main():
                 print(f"  CQL        Return={mean:8.2f}±{std:.2f}")
             except Exception:
                 pass
-        if os.path.exists("cql_native.pt"):
-            try:
-                from cql_agent import DiscreteCQL
-                cql = DiscreteCQL(state_dim=4, action_dim=4)
-                cql.load("cql_native.pt")
-                mean, std = rollout_param_shift(policy_cql(cql), n_patients=50, n_ep_per_patient=1, scale=0.30)
-                print(f"  CQL(native) Return={mean:8.2f}±{std:.2f}")
-            except Exception:
-                pass
         if os.path.exists("iql_model.d3"):
             try:
                 import d3rlpy
@@ -310,8 +276,8 @@ def main():
 
     # Verdict
     print("\n" + "=" * 50)
-    if os.path.exists("bc_policy.pt") or os.path.exists("bc_v2.pt"):
-        bc_mean = next((r[1] for r in results if r[0] in ("BC", "BC-v2")), None)
+    if os.path.exists("bc_policy.pt"):
+        bc_mean = next((r[1] for r in results if r[0] == "BC"), None)
         if bc_mean is not None:
             expert_mean = next(r[1] for r in results if r[0] == "Expert")
             random_mean = next(r[1] for r in results if r[0] == "Random")

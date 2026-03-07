@@ -146,8 +146,8 @@ def evaluate_policy(net, n_ep=10):
 if __name__ == '__main__':
     import os
     if not os.path.exists('offline_dataset.npz'):
-        from data.generate import generate_dataset_v2, save_dataset
-        data = generate_dataset_v2(n_trajectories=500, use_reward_v2=True)
+        from data.generate import generate_dataset, save_dataset
+        data = generate_dataset(n_trajectories=500, use_reward_v2=True)
         save_dataset(data)
     net = train_bc()
     evaluate_policy(net)
