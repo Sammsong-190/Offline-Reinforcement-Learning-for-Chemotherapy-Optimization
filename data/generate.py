@@ -62,10 +62,22 @@ def aggressive_policy(s):
     return 2.0 if T > 0.05 else 0.5
 
 
-def _policy_by_type(s, traj_type="expert"):
-    """Policy for given trajectory type (used by generate_dataset)."""
+def balanced_expert_policy(s, balance_ratio=0.6, expert_epsilon=0.2):
+    """balance_ratio: uniform sampling; (1-ratio): expert. expert_epsilon: exploration in expert."""
+    if np.random.rand() < balance_ratio:
+        return float(np.random.choice(ACTION_SPACE))
+    return expert_policy(s, epsilon=expert_epsilon)
+
+
+def add_state_noise(s, sigma=0.02):
+    """Add Gaussian noise to state for data augmentation."""
+    return np.array(s, dtype=np.float32) + np.random.normal(0, sigma, size=s.shape).astype(np.float32)
+
+
+def _policy_by_type(s, traj_type="expert", expert_balance_ratio=0.6, expert_epsilon=0.2):
+    """Policy for given trajectory type. expert_balance_ratio: uniform % in expert traj."""
     if traj_type == "expert":
-        return expert_policy(s, epsilon=0.15)
+        return balanced_expert_policy(s, balance_ratio=expert_balance_ratio, expert_epsilon=expert_epsilon)
     if traj_type == "balanced":
         return balanced_policy(s)
     if traj_type == "aggressive":
@@ -88,20 +100,22 @@ def _is_done(x):
     return is_done(x)
 
 
-def collect_trajectory(policy, params=None, x0=None, randomize_patient=False, reward_fn=None):
-    """Collect one trajectory. done=natural end, timeout=hit MAX_STEPS (d3rlpy needs one)."""
+def collect_trajectory(policy, params=None, x0=None, randomize_patient=False, reward_fn=None,
+                      state_noise_sigma=0.0, patient_scale=0.15):
+    """Collect one trajectory. state_noise_sigma: add noise to state for policy input (data aug)."""
     from env.chemo_env import reward_fn as default_reward
     reward_fn = reward_fn or default_reward
-    params = randomize_params(params, scale=0.15) if randomize_patient else (
+    params = randomize_params(params, scale=patient_scale) if randomize_patient else (
         params or DEFAULT_PARAMS)
     x = np.array(x0 or X0, dtype=np.float32)
     transitions = []
     for step in range(MAX_STEPS):
         s = x.copy()
+        s_for_policy = add_state_noise(s, state_noise_sigma) if state_noise_sigma > 0 else s
         try:
-            a = discretize_action(policy(s))
+            a = discretize_action(policy(s_for_policy))
         except TypeError:
-            a = discretize_action(policy(s, epsilon=0.2))
+            a = discretize_action(policy(s_for_policy, epsilon=0.2))
         x_next = step_ode(x, a, DT, params)
         done = _is_done(x_next)
         timeout = (step == MAX_STEPS - 1) and not done  # hit max steps
@@ -121,29 +135,36 @@ def collect_trajectory(policy, params=None, x0=None, randomize_patient=False, re
     return transitions
 
 
-def _policy_for_traj(traj_type):
+def _policy_for_traj(traj_type, expert_balance_ratio=0.6, expert_epsilon=0.2):
     """Return policy function for given trajectory type."""
 
     def policy(s):
-        return _policy_by_type(s, traj_type)
+        return _policy_by_type(s, traj_type, expert_balance_ratio, expert_epsilon)
 
     return policy
 
 
 def generate_dataset(
-    n_trajectories=500,
-    expert_ratio=0.60,
-    balanced_ratio=0.20,
+    n_trajectories=1000,
+    expert_ratio=0.50,
+    balanced_ratio=0.30,
     aggressive_ratio=0.10,
     conservative_ratio=0.10,
-    use_reward_v2=True,
+    use_reward_v3=True,
     randomize_patient=True,
+    state_noise_sigma=0.02,
+    expert_balance_ratio=0.6,
+    expert_epsilon=0.2,
+    patient_scale=0.15,
 ):
     """
-    Generate offline dataset: 60% expert, 20% balanced, 10% aggressive, 10% conservative.
-    Balanced improves action distribution; aggressive explores clearance path.
+    Generate offline dataset. Default: 50% expert, 30% balanced, 10% aggressive, 10% conservative.
+    expert_balance_ratio: uniform sampling in expert traj (higher=more exploration).
+    expert_epsilon: exploration in expert policy. patient_scale: randomization std (0.1-0.2).
+    state_noise_sigma: data augmentation.
     """
-    from env.chemo_env import reward_fn_v2
+    from env.chemo_env import reward_fn_v2, reward_fn_v3
+    reward_fn_impl = reward_fn_v3 if use_reward_v3 else reward_fn_v2
 
     traj_types = (
         ["expert"] * int(n_trajectories * expert_ratio)
@@ -154,12 +175,13 @@ def generate_dataset(
     np.random.shuffle(traj_types)
 
     all_transitions = []
-    reward_fn = reward_fn_v2 if use_reward_v2 else None
+    reward_fn = reward_fn_impl
 
     for traj_type in traj_types:
-        policy = _policy_for_traj(traj_type)
+        policy = _policy_for_traj(traj_type, expert_balance_ratio, expert_epsilon)
         traj = collect_trajectory(
-            policy, randomize_patient=randomize_patient, reward_fn=reward_fn
+            policy, randomize_patient=randomize_patient, reward_fn=reward_fn,
+            state_noise_sigma=state_noise_sigma, patient_scale=patient_scale,
         )
         all_transitions.extend(traj)
 

@@ -3,21 +3,10 @@ CQL (Conservative Q-Learning) training on offline chemotherapy data
 Paper: Supervised Optimal Chemotherapy Regimen Based on Offline Reinforcement Learning
 """
 import os
-import sys
-import types
 import numpy as np
 from env.robust import set_seed
 import warnings
 warnings.filterwarnings("ignore", message="Gym has been unmaintained")
-try:
-    import gymnasium as gym
-    from gymnasium.wrappers import TimeLimit
-    sys.modules["gym"] = gym
-    tl_mod = types.ModuleType("gym.wrappers.time_limit")
-    tl_mod.TimeLimit = TimeLimit
-    sys.modules["gym.wrappers.time_limit"] = tl_mod
-except ImportError:
-    pass
 
 set_seed(42)
 
@@ -39,7 +28,7 @@ def load_dataset_for_d3rlpy(data_path="offline_dataset.npz"):
     return s, a, r, s_next, done, timeout
 
 
-def train_cql(data_path="offline_dataset.npz", n_epochs=50, save_path="cql_model.d3"):
+def train_cql(data_path="offline_dataset.npz", n_epochs=100, save_path="cql_model.d3"):
     """Train DiscreteCQL on offline dataset"""
     try:
         import d3rlpy
@@ -59,10 +48,15 @@ def train_cql(data_path="offline_dataset.npz", n_epochs=50, save_path="cql_model
         dataset = d3rlpy.dataset.MDPDataset(s, a, r, done, timeout)
 
     cql = d3rlpy.algos.DiscreteCQLConfig(
-        batch_size=64, learning_rate=1e-4, gamma=0.99, alpha=1.0,
+        batch_size=256,
+        learning_rate=1e-4,
+        gamma=0.99,
+        alpha=5.0,
+        target_update_interval=2000,
+        n_critics=2,
     ).create(device="cpu")
 
-    n_steps = min(n_epochs * (n_transitions // 64), 50000)
+    n_steps = min(n_epochs * (n_transitions // 64), 200000)
     print(f"Training CQL for {n_steps} steps ({n_epochs} epochs)...")
     cql.fit(dataset, n_steps=n_steps)
 
@@ -76,6 +70,6 @@ if __name__ == "__main__":
     if not os.path.exists("offline_dataset.npz"):
         from data.generate import generate_dataset, save_dataset
 
-        data = generate_dataset(n_trajectories=500, use_reward_v2=True)
+        data = generate_dataset(n_trajectories=1000, use_reward_v3=True, state_noise_sigma=0.02, expert_balance_ratio=0.6)
         save_dataset(data)
     train_cql()

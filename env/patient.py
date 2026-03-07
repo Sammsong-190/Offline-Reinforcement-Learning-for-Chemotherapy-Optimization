@@ -11,7 +11,8 @@ IMMUNE_KEYS = ['c1', 'c2', 'rho', 'alpha', 'c3', 's', 'd1', 'd2']
 
 
 def randomize_params(params=None, scale=0.1, clip_range=(0.5, 1.5)):
-    """Grouped randomization with clip to avoid ODE explosion."""
+    """Grouped randomization with clip to avoid ODE explosion.
+    scale: std of multiplicative noise (0.1-0.2 typical). clip_range: avoid extreme patients."""
     base = params or DEFAULT_PARAMS
     p = copy.deepcopy(base)
     lo, hi = clip_range

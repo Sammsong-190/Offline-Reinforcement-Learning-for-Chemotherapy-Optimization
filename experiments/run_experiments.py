@@ -4,25 +4,13 @@ Run: python -m experiments.run_experiments
 """
 import os
 import sys
-import types
 import json
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Gymnasium compatibility for d3rlpy
-try:
-    import gymnasium as gym
-    from gymnasium.wrappers import TimeLimit
-    sys.modules["gym"] = gym
-    tl_mod = types.ModuleType("gym.wrappers.time_limit")
-    tl_mod.TimeLimit = TimeLimit
-    sys.modules["gym.wrappers.time_limit"] = tl_mod
-except ImportError:
-    pass
-
 from env.robust import set_seed
-from env.chemo_env import step_ode, reward_fn, DEFAULT_PARAMS, DT, MAX_STEPS, X0, T_CLEAR, is_done
+from env.chemo_env import step_ode, reward_fn_v3, DEFAULT_PARAMS, DT, MAX_STEPS, X0, T_CLEAR, is_done
 from env.patient import randomize_params
 
 set_seed(42)
@@ -44,11 +32,12 @@ def rollout_metrics(policy_fn, params, n_ep=5):
         x = np.array(X0, dtype=np.float32)
         R, actions, toxics = 0.0, [], []
         for _ in range(MAX_STEPS):
+            x_prev = x.copy()
             a = policy_fn(x)
             actions.append(float(a))
             x = step_ode(x, a, DT, params)
             toxics.append(x[3])
-            R += reward_fn(x, DT)
+            R += reward_fn_v3(x, DT, s_prev=x_prev)
             if is_done(x):
                 break
         returns.append(R)

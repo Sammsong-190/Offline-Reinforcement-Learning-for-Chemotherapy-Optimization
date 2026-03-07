@@ -2,19 +2,8 @@
 IQL (Implicit Q-Learning) / BCQ baseline for offline RL
 d3rlpy IQL is continuous-only; we use DiscreteBCQ as discrete offline RL baseline.
 """
-import sys
-import types
 import warnings
 warnings.filterwarnings("ignore", message="Gym has been unmaintained")
-try:
-    import gymnasium as gym
-    from gymnasium.wrappers import TimeLimit
-    sys.modules["gym"] = gym
-    tl_mod = types.ModuleType("gym.wrappers.time_limit")
-    tl_mod.TimeLimit = TimeLimit
-    sys.modules["gym.wrappers.time_limit"] = tl_mod
-except ImportError:
-    pass
 
 from env.robust import set_seed
 set_seed(42)
@@ -37,8 +26,8 @@ def load_dataset_for_d3rlpy(data_path="offline_dataset.npz"):
     return s, a, r, s_next, done, timeout
 
 
-def train_iql(data_path="offline_dataset.npz", n_epochs=50, save_path="iql_model.d3"):
-    """Train DiscreteBCQ (IQL-like offline RL for discrete actions)"""
+def train_iql(data_path="offline_dataset.npz", n_epochs=100, save_path="iql_model.d3"):
+    """Train DiscreteBCQ. action_flexibility=0.1 allows more treatment actions (was 0.3, too conservative)."""
     try:
         import d3rlpy
     except ImportError:
@@ -56,16 +45,17 @@ def train_iql(data_path="offline_dataset.npz", n_epochs=50, save_path="iql_model
     except TypeError:
         dataset = d3rlpy.dataset.MDPDataset(s, a, r, done, timeout)
 
-    # DiscreteBCQ: offline RL baseline (IQL is continuous-only in d3rlpy)
+    # action_flexibility: lower = more actions considered (less conservative, encourages treatment)
+    # beta: imitation regularization; slightly lower may allow more Q-guided exploration
     algo = d3rlpy.algos.DiscreteBCQConfig(
-        batch_size=64,
-        learning_rate=6.25e-5,
+        batch_size=128,
+        learning_rate=1e-4,
         gamma=0.99,
-        action_flexibility=0.3,
-        beta=0.5,
+        action_flexibility=0.1,
+        beta=0.4,
     ).create(device="cpu")
 
-    n_steps = min(n_epochs * (n_transitions // 64), 50000)
+    n_steps = min(n_epochs * (n_transitions // 128), 100000)
     print(f"Training BCQ (offline RL baseline) for {n_steps} steps...")
     algo.fit(dataset, n_steps=n_steps)
 
@@ -79,6 +69,6 @@ if __name__ == "__main__":
     if not os.path.exists("offline_dataset.npz"):
         from data.generate import generate_dataset, save_dataset
         set_seed(42)
-        data = generate_dataset(n_trajectories=500, use_reward_v2=True)
+        data = generate_dataset(n_trajectories=1000, use_reward_v3=True, state_noise_sigma=0.02, expert_balance_ratio=0.6)
         save_dataset(data)
     train_iql()

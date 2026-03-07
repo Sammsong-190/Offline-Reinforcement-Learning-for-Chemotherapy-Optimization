@@ -1,37 +1,24 @@
 """
 Verify reproduction: compare BC vs Expert vs Random vs Fixed-dose baselines
 """
-import sys
-import types
 import warnings
 warnings.filterwarnings("ignore", message="Gym has been unmaintained")
 warnings.filterwarnings("ignore", category=UserWarning, module="gym")
-
-# Gymnasium compatibility for d3rlpy (fixes "No module named 'gym.wrappers.time_limit'")
-try:
-    import gymnasium as gym
-    from gymnasium.wrappers import TimeLimit
-    sys.modules["gym"] = gym
-    tl_mod = types.ModuleType("gym.wrappers.time_limit")
-    tl_mod.TimeLimit = TimeLimit
-    sys.modules["gym.wrappers.time_limit"] = tl_mod
-except ImportError:
-    pass
 
 from env.robust import set_seed, rollout_param_shift
 set_seed(42)
 
 import numpy as np
 from env.chemo_env import (
-    step_ode, DEFAULT_PARAMS, reward_fn, reward_fn_v2,
+    step_ode, DEFAULT_PARAMS, reward_fn, reward_fn_v2, reward_fn_v3,
     DT, MAX_STEPS, X0, ACTION_SPACE, normalize_state, T_CLEAR, is_done,
 )
 from data.generate import expert_policy, behavior_policy
 
 
-def rollout(policy_fn, n_ep=10, params=None, use_reward_v2=True):
+def rollout(policy_fn, n_ep=10, params=None, use_reward_v3=True):
     """Rollout policy in ODE env, return mean ± std of returns"""
-    rfn = reward_fn_v2 if use_reward_v2 else reward_fn
+    rfn = reward_fn_v3 if use_reward_v3 else reward_fn_v2
     params = params or DEFAULT_PARAMS
     returns = []
     for _ in range(n_ep):
@@ -51,10 +38,10 @@ def rollout(policy_fn, n_ep=10, params=None, use_reward_v2=True):
 T_CONTROL_THRESH = 0.05  # tumor "control" threshold for time-to-control metric
 
 
-def rollout_with_metrics(policy_fn, n_ep=10, params=None, use_reward_v2=True):
+def rollout_with_metrics(policy_fn, n_ep=10, params=None, use_reward_v3=True):
     """Rollout and return (mean_return, std_return, tumor_clear, survival, avg_dose,
        avg_tumor, max_toxicity, drug_usage, treatment_efficiency, time_to_control)"""
-    rfn = reward_fn_v2 if use_reward_v2 else reward_fn
+    rfn = reward_fn_v3 if use_reward_v3 else reward_fn_v2
     params = params or DEFAULT_PARAMS
     returns, tumor_clears, survivals, doses = [], [], [], []
     final_tumors, max_toxicities, drug_usages = [], [], []

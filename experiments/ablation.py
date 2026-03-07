@@ -36,7 +36,7 @@ def run_ablation_dataset_size():
     results = []
     for n_traj in sizes:
         set_seed(42)
-        data = generate_dataset(n_trajectories=n_traj, use_reward_v2=True)
+        data = generate_dataset(n_trajectories=n_traj, use_reward_v3=True, state_noise_sigma=0.02, expert_balance_ratio=0.6)
         path = f"offline_dataset_n{n_traj}.npz"
         from data.generate import save_dataset
         save_dataset(data, path)

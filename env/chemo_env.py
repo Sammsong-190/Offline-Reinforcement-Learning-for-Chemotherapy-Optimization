@@ -64,6 +64,22 @@ def normalize_state(x):
     return x / X_SCALE
 
 
+# Approximate mean/std for Z-score (log1p(N,T,I), C/3). Tune from data for production.
+X_MEAN = np.array([0.5, 0.35, 0.5, 0.4], dtype=np.float32)
+X_STD = np.array([0.35, 0.3, 0.35, 0.35], dtype=np.float32)
+
+
+def normalize_state_zscore(x, mean=None, std=None):
+    """Z-score normalization. Use mean/std from training data for best stability."""
+    x = np.array(x, dtype=np.float32)
+    x = x.copy()
+    x[:3] = np.log1p(np.maximum(x[:3], 0.0))
+    x[3] = x[3] / X_SCALE[3]
+    m = mean if mean is not None else X_MEAN
+    s = std if std is not None else X_STD
+    return (x - m) / np.maximum(s, 1e-6)
+
+
 def denormalize_state(x_norm):
     """Inverse of normalize_state"""
     x = np.array(x_norm, dtype=np.float32) * X_SCALE
@@ -113,3 +129,30 @@ def reward_fn_v2(s, dt, s_prev=None):
     collapse = cfg["collapse"] if (N < 0.1 or I < 0.05) else 0.0
 
     return tumor_penalty + progress + normal_reward + immune_penalty + toxicity + clearance + milestone + collapse
+
+
+def reward_fn_v3(s, dt, s_prev=None):
+    """
+    Reward v3: stronger toxicity penalty, higher R_clear, multi-stage milestones.
+    Scaled to match v2 range (~-200 to +100) to avoid CQL TD loss explosion.
+    """
+    N, T, I, C = s[:4]
+    prev_T = s_prev[1] if s_prev is not None else T
+
+    r_tumor = -3.0 * T * dt
+    r_tox = -1.5 * np.tanh(C / 2.0) * dt  # stronger than v2 (0.5) but not excessive
+    R_clear = 50.0 if T < T_CLEAR else 0.0
+
+    # Milestones scaled by dt to avoid per-step explosion (was 35/step -> ~10k return)
+    r_milestone = 0.0
+    if T < 0.5:
+        r_milestone += 2.0 * dt
+    if T < 0.3:
+        r_milestone += 3.0 * dt
+    if T < 0.1:
+        r_milestone += 5.0 * dt
+
+    r_progress = 2.0 * (prev_T - T) * dt if s_prev is not None else 0.0
+    r_collapse = -20.0 if (N < 0.1 or I < 0.05) else 0.0
+
+    return r_tumor + r_tox + r_progress + R_clear + r_milestone + r_collapse

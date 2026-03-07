@@ -76,6 +76,7 @@ def train_bc(
 
     net = PolicyNet().to(DEVICE)
     opt = torch.optim.AdamW(net.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs, eta_min=1e-5)
     loss_fn = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
 
     best_val_loss = float('inf')
@@ -110,11 +111,13 @@ def train_bc(
         else:
             no_improve += 1
 
+        scheduler.step()
         if no_improve >= patience:
             print(f"Early stopping at epoch {ep+1} (val_loss no improve)")
             break
         if (ep + 1) % 20 == 0:
-            print(f"Epoch {ep+1}/{epochs} train_loss={train_loss:.4f} val_loss={val_loss:.4f} best_val={best_val_loss:.4f}")
+            current_lr = scheduler.get_last_lr()[0]
+            print(f"Epoch {ep+1}/{epochs} lr={current_lr:.6f} train_loss={train_loss:.4f} val_loss={val_loss:.4f} best_val={best_val_loss:.4f}")
 
     net.load_state_dict(torch.load(save_path, map_location=DEVICE))
     return net
@@ -147,7 +150,7 @@ if __name__ == '__main__':
     import os
     if not os.path.exists('offline_dataset.npz'):
         from data.generate import generate_dataset, save_dataset
-        data = generate_dataset(n_trajectories=500, use_reward_v2=True)
+        data = generate_dataset(n_trajectories=1000, use_reward_v3=True, state_noise_sigma=0.02, expert_balance_ratio=0.6)
         save_dataset(data)
     net = train_bc()
     evaluate_policy(net)
