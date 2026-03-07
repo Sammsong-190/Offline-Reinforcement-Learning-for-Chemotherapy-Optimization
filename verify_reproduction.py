@@ -18,14 +18,15 @@ set_seed(42)
 
 import numpy as np
 from env.chemo_env import (
-    step_ode, DEFAULT_PARAMS, reward_fn,
+    step_ode, DEFAULT_PARAMS, reward_fn, reward_fn_v2,
     DT, MAX_STEPS, X0, ACTION_SPACE, normalize_state, T_CLEAR, is_done,
 )
 from data.generate import expert_policy, behavior_policy
 
 
-def rollout(policy_fn, n_ep=10, params=None, use_enhanced_reward=True):
+def rollout(policy_fn, n_ep=10, params=None, use_reward_v2=True):
     """Rollout policy in ODE env, return mean ± std of returns"""
+    rfn = reward_fn_v2 if use_reward_v2 else reward_fn
     params = params or DEFAULT_PARAMS
     returns = []
     for _ in range(n_ep):
@@ -35,7 +36,7 @@ def rollout(policy_fn, n_ep=10, params=None, use_enhanced_reward=True):
             x_prev = x.copy()
             a = policy_fn(x)
             x = step_ode(x, a, DT, params)
-            R += reward_fn(x, DT, s_prev=x_prev if use_enhanced_reward else None)
+            R += rfn(x, DT, s_prev=x_prev)
             if is_done(x):
                 break
         returns.append(R)
@@ -45,9 +46,10 @@ def rollout(policy_fn, n_ep=10, params=None, use_enhanced_reward=True):
 T_CONTROL_THRESH = 0.05  # tumor "control" threshold for time-to-control metric
 
 
-def rollout_with_metrics(policy_fn, n_ep=10, params=None):
+def rollout_with_metrics(policy_fn, n_ep=10, params=None, use_reward_v2=True):
     """Rollout and return (mean_return, std_return, tumor_clear, survival, avg_dose,
        avg_tumor, max_toxicity, drug_usage, treatment_efficiency, time_to_control)"""
+    rfn = reward_fn_v2 if use_reward_v2 else reward_fn
     params = params or DEFAULT_PARAMS
     returns, tumor_clears, survivals, doses = [], [], [], []
     final_tumors, max_toxicities, drug_usages = [], [], []
@@ -66,7 +68,7 @@ def rollout_with_metrics(policy_fn, n_ep=10, params=None):
             toxics.append(x[3])
             if np.isnan(t_control) and x[1] < T_CONTROL_THRESH:
                 t_control = step * DT
-            R += reward_fn(x, DT, s_prev=x_prev)
+            R += rfn(x, DT, s_prev=x_prev)
             if is_done(x):
                 break
         returns.append(R)

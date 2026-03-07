@@ -140,7 +140,8 @@ def collect_trajectory(policy, params=None, x0=None, randomize_patient=False, re
     """Collect one trajectory. done=natural end, timeout=hit MAX_STEPS (d3rlpy needs one)."""
     from env.chemo_env import reward_fn as default_reward
     reward_fn = reward_fn or default_reward
-    params = randomize_params(params, scale=0.15) if randomize_patient else (params or DEFAULT_PARAMS)
+    params = randomize_params(params, scale=0.15) if randomize_patient else (
+        params or DEFAULT_PARAMS)
     x = np.array(x0 or X0, dtype=np.float32)
     transitions = []
     for step in range(MAX_STEPS):

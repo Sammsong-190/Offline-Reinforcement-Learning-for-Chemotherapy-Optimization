@@ -26,7 +26,7 @@ def rollout_param_shift(policy_fn, n_patients=50, n_ep_per_patient=2, params_bas
     Robust evaluation: test policy on randomized patients.
     scale: 0.15 = in-distribution, 0.30 = OOD (out-of-distribution).
     """
-    from env.chemo_env import step_ode, reward_fn, DT, MAX_STEPS, X0, is_done
+    from env.chemo_env import step_ode, reward_fn_v2, DT, MAX_STEPS, X0, is_done
     from env.patient import randomize_params
 
     params_base = params_base or __import__("env.chemo_env", fromlist=["DEFAULT_PARAMS"]).DEFAULT_PARAMS
@@ -40,7 +40,7 @@ def rollout_param_shift(policy_fn, n_patients=50, n_ep_per_patient=2, params_bas
                 x_prev = x.copy()
                 a = policy_fn(x)
                 x = step_ode(x, a, DT, params)
-                R += reward_fn(x, DT)
+                R += reward_fn_v2(x, DT, s_prev=x_prev)
                 if is_done(x):
                     break
             all_returns.append(R)

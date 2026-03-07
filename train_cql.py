@@ -2,6 +2,9 @@
 CQL (Conservative Q-Learning) training on offline chemotherapy data
 Paper: Supervised Optimal Chemotherapy Regimen Based on Offline Reinforcement Learning
 """
+import os
+import numpy as np
+from env.robust import set_seed
 import warnings
 warnings.filterwarnings("ignore", message="Gym has been unmaintained")
 try:
@@ -11,11 +14,7 @@ try:
 except ImportError:
     pass
 
-from env.robust import set_seed
 set_seed(42)
-
-import numpy as np
-import os
 
 
 def load_dataset_for_d3rlpy(data_path="offline_dataset.npz"):
@@ -26,7 +25,8 @@ def load_dataset_for_d3rlpy(data_path="offline_dataset.npz"):
     r = np.array(d["r"], dtype=np.float32)
     s_next = np.array(d["s_next"], dtype=np.float32)
     done = np.array(d["done"], dtype=bool)
-    timeout = np.array(d["timeout"], dtype=bool) if "timeout" in d else np.zeros_like(done, dtype=bool)
+    timeout = np.array(
+        d["timeout"], dtype=bool) if "timeout" in d else np.zeros_like(done, dtype=bool)
     # Ensure at least one terminal: if none, mark last of each traj as timeout
     if not (done.any() or timeout.any()):
         # Infer trajectory ends: every ~100 steps (approx) or force last step
@@ -74,7 +74,8 @@ def train_cql(data_path="offline_dataset.npz", n_epochs=50, save_path="cql_model
     cql.fit(dataset, n_steps=n_steps)
 
     # Save (d3rlpy uses .d3 or directory)
-    out_path = save_path.replace(".pt", ".d3") if save_path.endswith(".pt") else save_path
+    out_path = save_path.replace(
+        ".pt", ".d3") if save_path.endswith(".pt") else save_path
     cql.save(out_path)
     print(f"Saved {out_path}")
     return cql
@@ -82,8 +83,8 @@ def train_cql(data_path="offline_dataset.npz", n_epochs=50, save_path="cql_model
 
 if __name__ == "__main__":
     if not os.path.exists("offline_dataset.npz"):
-        from data.generate import generate_dataset, save_dataset
+        from data.generate import generate_dataset_v2, save_dataset
 
-        data = generate_dataset(n_trajectories=500)
+        data = generate_dataset_v2(n_trajectories=500, use_reward_v2=True)
         save_dataset(data)
     train_cql()

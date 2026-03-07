@@ -384,3 +384,6 @@ A：BC 只模仿 (s,a)；CQL 利用 (s,a,r,s') 做价值估计，可超越行为
 
 **Q：复现成功标准？**  
 A：BC ≈ Expert，且 CQL > BC 更佳。
+
+**Q：loss 正常但 Return 不提升，是否过拟合？**  
+A：有可能。训练 loss 下降而验证/测试 Return 未改善，说明模型在记忆数据。已加：train/val 划分、val-based early stopping、label_smoothing、weight_decay、梯度裁剪。
