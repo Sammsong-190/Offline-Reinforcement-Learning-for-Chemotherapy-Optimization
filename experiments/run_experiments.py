@@ -4,10 +4,22 @@ Run: python -m experiments.run_experiments
 """
 import os
 import sys
+import types
 import json
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Gymnasium compatibility for d3rlpy
+try:
+    import gymnasium as gym
+    from gymnasium.wrappers import TimeLimit
+    sys.modules["gym"] = gym
+    tl_mod = types.ModuleType("gym.wrappers.time_limit")
+    tl_mod.TimeLimit = TimeLimit
+    sys.modules["gym.wrappers.time_limit"] = tl_mod
+except ImportError:
+    pass
 
 from env.robust import set_seed
 from env.chemo_env import step_ode, reward_fn, DEFAULT_PARAMS, DT, MAX_STEPS, X0, T_CLEAR, is_done

@@ -1,15 +1,20 @@
 """
 Verify reproduction: compare BC vs Expert vs Random vs Fixed-dose baselines
 """
+import sys
+import types
 import warnings
 warnings.filterwarnings("ignore", message="Gym has been unmaintained")
 warnings.filterwarnings("ignore", category=UserWarning, module="gym")
 
-# Optional: use gymnasium as gym for d3rlpy (suppresses Gym deprecation warning)
+# Gymnasium compatibility for d3rlpy (fixes "No module named 'gym.wrappers.time_limit'")
 try:
     import gymnasium as gym
-    import sys
+    from gymnasium.wrappers import TimeLimit
     sys.modules["gym"] = gym
+    tl_mod = types.ModuleType("gym.wrappers.time_limit")
+    tl_mod.TimeLimit = TimeLimit
+    sys.modules["gym.wrappers.time_limit"] = tl_mod
 except ImportError:
     pass
 

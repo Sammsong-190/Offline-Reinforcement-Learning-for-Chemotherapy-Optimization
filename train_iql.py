@@ -2,12 +2,17 @@
 IQL (Implicit Q-Learning) / BCQ baseline for offline RL
 d3rlpy IQL is continuous-only; we use DiscreteBCQ as discrete offline RL baseline.
 """
+import sys
+import types
 import warnings
 warnings.filterwarnings("ignore", message="Gym has been unmaintained")
 try:
     import gymnasium as gym
-    import sys
+    from gymnasium.wrappers import TimeLimit
     sys.modules["gym"] = gym
+    tl_mod = types.ModuleType("gym.wrappers.time_limit")
+    tl_mod.TimeLimit = TimeLimit
+    sys.modules["gym.wrappers.time_limit"] = tl_mod
 except ImportError:
     pass
 
