@@ -102,7 +102,8 @@ class SafeCQL(BaseAlgo):
             pi_probs = self.actor(ss)
             q_c_pi = torch.stack([net(ss) for net in self.q_c_nets], dim=0).mean(0)
             current_risk = (pi_probs * q_c_pi).sum(-1).mean()
-        lambda_loss = self.log_lambda * (current_risk - self.cost_limit)
+        # 对偶上升: Cost>ε 时 λ 应增大。min -λ(risk-ε) 等价于 max λ(risk-ε)
+        lambda_loss = -self.log_lambda * (current_risk - self.cost_limit)
         self.opt_lambda.zero_grad()
         lambda_loss.backward()
         self.opt_lambda.step()
@@ -133,6 +134,7 @@ class SafeCQL(BaseAlgo):
             "q_c_loss": q_c_loss.item(),
             "actor_loss": actor_loss.item(),
             "lambda": torch.exp(self.log_lambda).item(),
+            "current_risk": current_risk.item(),  # E[Q_C] under π，真实 Cost 预估值
         }
 
     def train(self, data_path: str, n_steps=200000, batch_size=256, save_path="safe_cql_model.pt"):
@@ -156,7 +158,9 @@ class SafeCQL(BaseAlgo):
             batch = sample()
             losses = self.update(*batch)
             if (step + 1) % 10000 == 0:
-                print(f"  step {step+1}: lambda={losses['lambda']:.2f} qr_loss={losses['q_r_loss']:.4f} qc_loss={losses['q_c_loss']:.4f}")
+                risk = losses.get("current_risk", 0)
+                print(f"  step {step+1}: λ={losses['lambda']:.2f} Q_C(π)={risk:.4f} (limit={self.cost_limit}) "
+                      f"qr_loss={losses['q_r_loss']:.4f} qc_loss={losses['q_c_loss']:.4f}")
 
         torch.save({"actor": self.actor.state_dict(), "q_r": self.q_r_nets[0].state_dict(), "q_c": self.q_c_nets[0].state_dict()}, save_path)
         print(f"Saved {save_path}")

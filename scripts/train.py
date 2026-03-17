@@ -28,6 +28,8 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--data", default=None, help="Override data path")
     parser.add_argument("--save", default=None, help="Override save path")
+    parser.add_argument("--cost-limit", type=float, default=None,
+                        help="Safe CQL: cost budget ε (Strict=0.01, Moderate=0.1, Loose=0.5)")
     args = parser.parse_args()
 
     from env.robust import set_seed
@@ -54,13 +56,14 @@ def main():
         agent_cfg = load_config(ac_path) if (ROOT / ac_path).exists() else {}
         p = agent_cfg.get("params", agent_cfg)
         net = agent_cfg.get("network", {})
+        cost_limit = args.cost_limit if args.cost_limit is not None else p.get("cost_limit", 0.1)
         algo = __import__("src.algos.safe_cql", fromlist=["SafeCQL"]).SafeCQL(
             actor_lr=p.get("actor_lr", 1e-4),
             critic_lr=p.get("critic_lr", p.get("learning_rate", 3e-4)),
             lagrangian_lr=p.get("lagrangian_lr", p.get("lambda_lr", 1e-3)),
             gamma=p.get("gamma", 0.99),
             alpha_cql=p.get("alpha_cql", 5.0),
-            cost_limit=p.get("cost_limit", 0.1),
+            cost_limit=cost_limit,
             hidden=net.get("hidden", 64),
             state_dim=net.get("state_dim", 4),
             n_actions=net.get("n_actions", 4),
