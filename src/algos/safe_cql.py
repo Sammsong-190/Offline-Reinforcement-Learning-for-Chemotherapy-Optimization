@@ -54,6 +54,7 @@ class SafeCQL(BaseAlgo):
             self.q_c_targets[i].load_state_dict(self.q_c_nets[i].state_dict())
 
         self.log_lambda = nn.Parameter(torch.tensor(0.0, device=self.device))
+        self.tau = 0.005  # soft target update
         self.opt_qr = torch.optim.Adam([p for net in self.q_r_nets for p in net.parameters()], lr=critic_lr)
         self.opt_qc = torch.optim.Adam([p for net in self.q_c_nets for p in net.parameters()], lr=critic_lr)
         self.opt_actor = torch.optim.Adam(self.actor.parameters(), lr=actor_lr)
@@ -72,6 +73,7 @@ class SafeCQL(BaseAlgo):
             next_a = self.actor(ss_next).argmax(-1)
             q_next = torch.min(torch.stack([t(ss_next).gather(1, next_a.unsqueeze(1)).squeeze(1) for t in self.q_r_targets]), dim=0)[0]
             td_target = rr.squeeze() + self.gamma * (1 - term_b.squeeze()) * q_next
+            td_target = td_target.clamp(-50.0, 50.0)  # 防止 bootstrap 爆炸
         td_loss = F.mse_loss(q_r, td_target)
         log_sum_exp_q = torch.logsumexp(torch.stack([net(ss) for net in self.q_r_nets], dim=0).mean(0), dim=-1)
         q_data = (torch.stack([net(ss) for net in self.q_r_nets], dim=0).mean(0) * aa_onehot).sum(-1)
@@ -79,6 +81,7 @@ class SafeCQL(BaseAlgo):
         q_r_loss = td_loss + self.alpha_cql * cql_penalty
         self.opt_qr.zero_grad()
         q_r_loss.backward()
+        torch.nn.utils.clip_grad_norm_([p for net in self.q_r_nets for p in net.parameters()], 10.0)
         self.opt_qr.step()
 
         # --- 2. Cost Q (MSE) ---
@@ -87,12 +90,14 @@ class SafeCQL(BaseAlgo):
             next_a = self.actor(ss_next).argmax(-1)
             q_c_next = torch.min(torch.stack([t(ss_next).gather(1, next_a.unsqueeze(1)).squeeze(1) for t in self.q_c_targets]), dim=0)[0]
             c_td_target = cc.squeeze() + self.gamma * (1 - term_b.squeeze()) * q_c_next
+            c_td_target = c_td_target.clamp(0.0, 10.0)  # cost ∈ [0,1]，discounted sum 有界
         q_c_loss = F.mse_loss(q_c, c_td_target)
         self.opt_qc.zero_grad()
         q_c_loss.backward()
+        torch.nn.utils.clip_grad_norm_([p for net in self.q_c_nets for p in net.parameters()], 10.0)
         self.opt_qc.step()
 
-        # --- 3. Lagrange: min_λ λ·(J_C - ε) ---
+        # --- 3. Lagrange: min_λ λ·(J_C - ε)，clip 防止 λ 爆炸 ---
         with torch.no_grad():
             pi_probs = self.actor(ss)
             q_c_pi = torch.stack([net(ss) for net in self.q_c_nets], dim=0).mean(0)
@@ -101,22 +106,27 @@ class SafeCQL(BaseAlgo):
         self.opt_lambda.zero_grad()
         lambda_loss.backward()
         self.opt_lambda.step()
+        with torch.no_grad():
+            self.log_lambda.clamp_(np.log(0.01), np.log(10.0))  # λ ∈ [0.01, 10]，避免过度保守
 
         # --- 4. Actor: max_π (Q_R - λ·Q_C) ---
         pi_probs = self.actor(ss)
         q_r_pi = (torch.stack([net(ss) for net in self.q_r_nets], dim=0).mean(0) * pi_probs).sum(-1)
         q_c_pi = (torch.stack([net(ss) for net in self.q_c_nets], dim=0).mean(0) * pi_probs).sum(-1)
-        lam = torch.exp(self.log_lambda).clamp(0.01, 100.0).detach()
+        lam = torch.exp(self.log_lambda).clamp(0.01, 10.0).detach()
         actor_loss = -(q_r_pi - lam * q_c_pi).mean()
         self.opt_actor.zero_grad()
         actor_loss.backward()
         self.opt_actor.step()
 
         self._step += 1
-        if self._step % self.target_update_interval == 0:
+        # 软目标更新，避免 2000 步时突变导致 Q 爆炸
+        if self._step % 10 == 0:
             for i in range(self.n_critics):
-                self.q_r_targets[i].load_state_dict(self.q_r_nets[i].state_dict())
-                self.q_c_targets[i].load_state_dict(self.q_c_nets[i].state_dict())
+                for p_t, p in zip(self.q_r_targets[i].parameters(), self.q_r_nets[i].parameters()):
+                    p_t.data.mul_(1 - self.tau).add_(p.data, alpha=self.tau)
+                for p_t, p in zip(self.q_c_targets[i].parameters(), self.q_c_nets[i].parameters()):
+                    p_t.data.mul_(1 - self.tau).add_(p.data, alpha=self.tau)
 
         return {
             "q_r_loss": q_r_loss.item(),
@@ -146,7 +156,7 @@ class SafeCQL(BaseAlgo):
             batch = sample()
             losses = self.update(*batch)
             if (step + 1) % 10000 == 0:
-                print(f"  step {step+1}: lambda={losses['lambda']:.3f} q_r={losses['q_r_loss']:.4f}")
+                print(f"  step {step+1}: lambda={losses['lambda']:.2f} qr_loss={losses['q_r_loss']:.4f} qc_loss={losses['q_c_loss']:.4f}")
 
         torch.save({"actor": self.actor.state_dict(), "q_r": self.q_r_nets[0].state_dict(), "q_c": self.q_c_nets[0].state_dict()}, save_path)
         print(f"Saved {save_path}")
