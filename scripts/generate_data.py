@@ -31,6 +31,7 @@ def main():
         use_reward_v3=True,
         state_noise_sigma=0.02,
         expert_balance_ratio=0.6,
+        seed=args.seed,
     )
     save_dataset(data, str(out_path))
     if args.d4rl:

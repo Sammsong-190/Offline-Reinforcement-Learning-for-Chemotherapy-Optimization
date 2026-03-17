@@ -158,13 +158,17 @@ def generate_dataset(
     expert_balance_ratio=0.6,
     expert_epsilon=0.2,
     patient_scale=0.15,
+    seed=None,
 ):
     """
     Generate offline dataset. Default: 50% expert, 30% balanced, 10% aggressive, 10% conservative.
-    expert_balance_ratio: uniform sampling in expert traj (higher=more exploration).
-    expert_epsilon: exploration in expert policy. patient_scale: randomization std (0.1-0.2).
-    state_noise_sigma: data augmentation.
+    seed: 复现性 (SCI 红线)。若提供则 set_seed(seed) 并用于 traj shuffle。
     """
+    if seed is not None:
+        from env.robust import set_seed
+        set_seed(seed)
+    rng = np.random.RandomState(seed if seed is not None else 0)
+
     from env.chemo_env import reward_fn_v2, reward_fn_v3
     reward_fn_impl = reward_fn_v3 if use_reward_v3 else reward_fn_v2
 
@@ -174,7 +178,7 @@ def generate_dataset(
         + ["aggressive"] * int(n_trajectories * aggressive_ratio)
         + ["conservative"] * int(n_trajectories * conservative_ratio)
     )
-    np.random.shuffle(traj_types)
+    rng.shuffle(traj_types)
 
     all_transitions = []
     reward_fn = reward_fn_impl
@@ -192,6 +196,10 @@ def generate_dataset(
     for i, val in enumerate([0.0, 0.5, 1.0, 2.0]):
         pct = (a_idx == i).mean() * 100
         print(f"  Action {val}: {pct:.1f}%")
+    # Cost 分布 (SCI: 理想 5%-15%)
+    c_arr = np.array([t.get("c", 0.0) for t in all_transitions])
+    cost_rate = c_arr.mean() * 100
+    print(f"  Cost 违规率: {cost_rate:.2f}% (理想 5%-15%)")
     return all_transitions
 
 
@@ -213,7 +221,8 @@ def save_dataset(transitions, path='offline_dataset.npz'):
 
 
 def save_dataset_d4rl(transitions, path='offline_dataset_d4rl.npz'):
-    """D4RL 兼容格式: observations, actions, rewards, next_observations, terminals, costs"""
+    """D4RL 兼容: observations, actions, rewards, next_observations, terminals, timeouts, costs
+    保留 terminals(done) 与 timeouts 分开，算法可区分真死 vs 时间到。"""
     s = np.array([t['s'] for t in transitions], dtype=np.float32)
     a = np.array([t['a_idx'] for t in transitions], dtype=np.int64)
     r = np.array([t['r'] for t in transitions], dtype=np.float32)
@@ -221,13 +230,13 @@ def save_dataset_d4rl(transitions, path='offline_dataset_d4rl.npz'):
     done = np.array([t['done'] for t in transitions], dtype=bool)
     timeout = np.array([t.get('timeout', False) for t in transitions], dtype=bool)
     c = np.array([t.get('c', 0.0) for t in transitions], dtype=np.float32)
-    terminals = done | timeout
     np.savez(path,
              observations=s,
              actions=a,
              rewards=r,
              next_observations=s_next,
-             terminals=terminals,
+             terminals=done,
+             timeouts=timeout,
              costs=c,
              action_space=ACTION_SPACE)
     print(f"Saved D4RL format: {len(transitions)} transitions to {path}")

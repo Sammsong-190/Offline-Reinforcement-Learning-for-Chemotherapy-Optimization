@@ -12,17 +12,16 @@ def load_npz(path: str):
     if not path.exists():
         raise FileNotFoundError(f"Dataset not found: {path}")
     d = np.load(path)
-    # D4RL format: observations, actions, rewards, next_observations, terminals, costs
+    # D4RL format: observations, actions, rewards, next_observations, terminals, timeouts, costs
     if "observations" in d:
         out = {
             "s": np.array(d["observations"], dtype=np.float32),
             "a": np.array(d["actions"]).flatten().astype(np.int64),
             "r": np.array(d["rewards"], dtype=np.float32),
             "s_next": np.array(d["next_observations"], dtype=np.float32),
-            "terminals": np.array(d["terminals"], dtype=bool),
+            "done": np.array(d["terminals"], dtype=bool),
+            "timeout": np.array(d["timeouts"], dtype=bool) if "timeouts" in d else np.zeros(d["terminals"].shape, dtype=bool),
         }
-        out["done"] = out["terminals"].copy()
-        out["timeout"] = np.zeros_like(out["done"])
         out["c"] = np.array(d["costs"], dtype=np.float32) if "costs" in d else np.zeros_like(out["r"])
     else:
         out = {

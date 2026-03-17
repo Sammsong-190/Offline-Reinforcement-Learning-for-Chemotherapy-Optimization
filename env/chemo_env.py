@@ -37,15 +37,15 @@ REWARD_CLIP = (-100.0, 100.0)
 # Default reward version used in experiments / paper
 DEFAULT_REWARD_VERSION = 'v3'
 
-# Safe RL (CMDP): cost thresholds for constraint violation
-# c(s,a)=1 if I<0.3 (immune collapse) or N<0.4 (organ failure), else 0
-I_SAFE = 0.3   # immune safety threshold
-N_SAFE = 0.4   # normal cell safety threshold
+# Safe RL (CMDP): 二值 cost c ∈ {0, 1}
+# c=1: 违规 (Unsafe) | c=0: 安全 (Safe)
+# 阈值与 reward_fn 软惩罚区分: 此为硬约束
+I_SAFE = 0.3   # 免疫崩溃硬约束
+N_SAFE = 0.4   # 器官衰竭硬约束 (比 is_done 的 0.1 更早预警)
 
 
 def transition_cost(s_curr):
-    """Cost for CMDP: 1 if constraint violated (I<0.3 or N<0.4), else 0.
-    Used in Lagrangian Safe RL."""
+    """二值指示函数: c=1 if 违规 else 0. SCI 标准 c(s,a) ∈ {0,1}."""
     N, I = float(s_curr[0]), float(s_curr[2])
     return 1.0 if (I < I_SAFE or N < N_SAFE) else 0.0
 
