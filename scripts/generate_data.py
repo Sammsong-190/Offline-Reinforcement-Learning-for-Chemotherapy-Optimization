@@ -16,7 +16,9 @@ def main():
     parser.add_argument("--output", "-o", default="data/raw/offline_dataset.npz", help="Output path")
     parser.add_argument("--n", type=int, default=1000, help="n_trajectories")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--d4rl", action="store_true", help="Also save D4RL format (observations, actions, rewards, next_observations, terminals, costs)")
+    parser.add_argument("--d4rl", action="store_true", help="Also save D4RL format")
+    parser.add_argument("--preset", choices=["default", "safe"], default="default",
+                        help="default: 50/30/10/10 mix, ~25%% cost; safe: 70/15/5/10, target 5-15%% cost")
     args = parser.parse_args()
 
     from env.robust import set_seed
@@ -26,12 +28,21 @@ def main():
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
+    if args.preset == "safe":
+        # 更多 expert、更少 aggressive/balanced，expert 更少随机 → 目标 5%-15% 违规率
+        kw = dict(
+            expert_ratio=0.70, balanced_ratio=0.15, aggressive_ratio=0.05, conservative_ratio=0.10,
+            expert_balance_ratio=0.25, expert_epsilon=0.15, patient_scale=0.10,
+        )
+    else:
+        kw = dict(expert_balance_ratio=0.6)
+
     data = generate_dataset(
         n_trajectories=args.n,
         use_reward_v3=True,
         state_noise_sigma=0.02,
-        expert_balance_ratio=0.6,
         seed=args.seed,
+        **kw,
     )
     save_dataset(data, str(out_path))
     if args.d4rl:

@@ -12,7 +12,7 @@ warnings.filterwarnings("ignore", message="Gym has been unmaintained")
 
 
 def load_dataset_for_d3rlpy(data_path="offline_dataset.npz"):
-    """D4RL 标准格式: 显式 terminals(done) 和 timeouts，不猜测。"""
+    """完全信任数据: 显式 done 和 timeout，不猜测。"""
     d = np.load(data_path)
     s = np.array(d["s"], dtype=np.float32)
     a = np.array(d["a"]).flatten().astype(np.int64)
@@ -20,11 +20,11 @@ def load_dataset_for_d3rlpy(data_path="offline_dataset.npz"):
     s_next = np.array(d["s_next"], dtype=np.float32)
     done = np.array(d["done"], dtype=bool)
     timeout = np.array(d["timeout"], dtype=bool) if "timeout" in d else np.zeros_like(done, dtype=bool)
-    # D4RL: terminals = done | timeout. 数据生成时已显式保存，无猜测。
     if not (done.any() or timeout.any()):
-        import warnings
-        warnings.warn("No terminals in dataset. Marking last step as timeout (legacy data?).")
-        timeout[-1] = True
+        raise ValueError(
+            "No terminals (done/timeout) in dataset. Regenerate with: "
+            "python scripts/generate_data.py -o offline_dataset.npz"
+        )
     return s, a, r, s_next, done, timeout
 
 
@@ -80,7 +80,8 @@ if __name__ == "__main__":
     set_seed(args.seed)
     if not os.path.exists(args.data):
         from data.generate import generate_dataset, save_dataset
-        data = generate_dataset(n_trajectories=1000, use_reward_v3=True, state_noise_sigma=0.02, expert_balance_ratio=0.6)
+        data = generate_dataset(n_trajectories=1000, use_reward_v3=True, state_noise_sigma=0.02,
+                                expert_balance_ratio=0.6, seed=args.seed)
         save_dataset(data, args.data)
     train_cql(data_path=args.data, save_path=args.save, alpha=args.alpha, lr=args.lr,
               batch_size=args.batch_size, n_steps=args.n_steps)
