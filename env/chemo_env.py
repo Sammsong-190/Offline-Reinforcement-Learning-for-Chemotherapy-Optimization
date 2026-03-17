@@ -50,6 +50,9 @@ def transition_cost(s_curr):
     return 1.0 if (I < I_SAFE or N < N_SAFE) else 0.0
 
 
+get_cost = transition_cost  # alias for paper/API
+
+
 def is_done(x):
     """Tumor cleared | organ failure | immune collapse | toxicity limit | ODE explosion"""
     T, N, I, C = x[1], x[0], x[2], x[3]

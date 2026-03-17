@@ -56,7 +56,17 @@ python scripts/train.py --algo safe_cql --agent-config configs/agent/safe_cql_lo
 python scripts/evaluate.py --policies expert bc safe_cql cql random --seeds 42 123 456 -o results/eval_results.csv
 ```
 
-输出 CSV 含: return_mean, constraint_violation_rate_pct, survival_pct 等，供 notebooks 画图。
+输出 CSV 含: return_mean, constraint_violation_rate_pct, survival_pct 等，供 notebooks 画 Return vs Cost 图。
+
+## 多种子实验 (SCI 要求)
+
+```bash
+# 单一种子不被认可，需 3-5 个种子取 mean±std
+python scripts/evaluate.py --seeds 42 123 456 789 1024 -o results/multi_seed.csv
+
+# OOD 鲁棒性测试
+python scripts/evaluate.py --ood -o results/ood_eval.csv
+```
 
 ## 实验设计（论文）
 

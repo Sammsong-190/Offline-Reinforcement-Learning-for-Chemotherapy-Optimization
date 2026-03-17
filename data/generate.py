@@ -196,7 +196,7 @@ def generate_dataset(
 
 
 def save_dataset(transitions, path='offline_dataset.npz'):
-    """Save with s_norm, s_raw, a_idx, r, c, s'_norm, s'_raw, done, timeout"""
+    """D4RL 标准: 显式 done(terminals), timeout, costs。生成时存好，不猜测。"""
     s = np.array([t['s'] for t in transitions])
     s_raw = np.array([t['s_raw'] for t in transitions])
     a = np.array([t['a_idx'] for t in transitions], dtype=np.int64)

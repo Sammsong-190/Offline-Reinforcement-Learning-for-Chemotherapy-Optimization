@@ -25,12 +25,13 @@ def main():
     parser.add_argument("--algo", choices=["bc", "cql", "safe_cql"], default="safe_cql")
     parser.add_argument("--config", default="configs/experiment/train_safe.yaml")
     parser.add_argument("--agent-config", default=None, help="e.g. agent/safe_cql_strict.yaml")
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--data", default=None, help="Override data path")
     parser.add_argument("--save", default=None, help="Override save path")
     args = parser.parse_args()
 
     from env.robust import set_seed
-    set_seed(42)
+    set_seed(args.seed)
 
     cfg = load_config(args.config) if Path(args.config).exists() else {}
     data_path = args.data or cfg.get("data", {}).get("path", "data/raw/offline_dataset.npz")

@@ -12,7 +12,7 @@
 pip install -r requirements.txt
 python scripts/generate_data.py -o offline_dataset.npz
 python train_offline.py
-python train_cql.py   # 需 d3rlpy
+python train_cql.py --alpha 5 --lr 1e-4 --seed 42   # d3rlpy 强基线
 python train_iql.py   # IQL/BCQ 基线，需 d3rlpy
 python scripts/train.py --algo safe_cql
 python verify_reproduction.py
@@ -24,7 +24,7 @@ python verify_reproduction.py
 ```bash
 python scripts/generate_data.py -o data/raw/offline_dataset.npz
 python scripts/train.py --algo safe_cql
-python scripts/evaluate.py --policy safe_cql
+python scripts/evaluate.py --seeds 42 123 456 -o results/eval.csv
 ```
 
 ---
