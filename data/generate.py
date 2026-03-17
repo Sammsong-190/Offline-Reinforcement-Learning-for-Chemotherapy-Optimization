@@ -120,12 +120,14 @@ def collect_trajectory(policy, params=None, x0=None, randomize_patient=False, re
         done = _is_done(x_next)
         timeout = (step == MAX_STEPS - 1) and not done  # hit max steps
         r = reward_fn(x_next, DT, s_prev=x)
+        from env.chemo_env import transition_cost
+        c = transition_cost(x_next)
         s_norm = normalize_state(s)
         s_next_norm = normalize_state(x_next)
         transitions.append({
             's': s_norm, 's_raw': s.copy(),
             'a': a, 'a_idx': action_to_index(a),
-            'r': r, 's_next': s_next_norm, 's_next_raw': x_next.copy(),
+            'r': r, 'c': c, 's_next': s_next_norm, 's_next_raw': x_next.copy(),
             'done': done,
             'timeout': timeout,
         })
@@ -194,16 +196,17 @@ def generate_dataset(
 
 
 def save_dataset(transitions, path='offline_dataset.npz'):
-    """Save with s_norm, s_raw, a_idx, r, s'_norm, s'_raw, done, timeout"""
+    """Save with s_norm, s_raw, a_idx, r, c, s'_norm, s'_raw, done, timeout"""
     s = np.array([t['s'] for t in transitions])
     s_raw = np.array([t['s_raw'] for t in transitions])
     a = np.array([t['a_idx'] for t in transitions], dtype=np.int64)
     r = np.array([t['r'] for t in transitions])
+    c = np.array([t.get('c', 0.0) for t in transitions], dtype=np.float32)
     s_next = np.array([t['s_next'] for t in transitions])
     s_next_raw = np.array([t['s_next_raw'] for t in transitions])
     done = np.array([t['done'] for t in transitions])
     timeout = np.array([t.get('timeout', False) for t in transitions])
-    np.savez(path, s=s, s_raw=s_raw, a=a, r=r, s_next=s_next, s_next_raw=s_next_raw,
+    np.savez(path, s=s, s_raw=s_raw, a=a, r=r, c=c, s_next=s_next, s_next_raw=s_next_raw,
              done=done, timeout=timeout, action_space=ACTION_SPACE)
     print(f"Saved {len(transitions)} transitions to {path}")
     return path

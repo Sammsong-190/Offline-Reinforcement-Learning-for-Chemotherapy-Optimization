@@ -1,8 +1,13 @@
 """
-Chemotherapy ODE environment
+Chemotherapy ODE environment (v3-only)
 Based on Padmanabhan et al. 2017, 4-dim system (N, T, I, C)
-"""
 
+This file:
+- keeps only reward v3 as default
+- implements transition_reward(prev, s, dt) with crossing-only bonuses
+- clips per-step reward (REWARD_CLIP)
+- exposes DEFAULT_REWARD_VERSION='v3'
+"""
 import numpy as np
 
 # State scale for normalization (log-domain for N,T,I)
@@ -17,14 +22,32 @@ DEFAULT_PARAMS = {
 }
 
 DT = 0.3
-MAX_STEPS = 300  # tumor dynamics are slow; 250 insufficient (Tctrl=75)
+MAX_STEPS = 300  # tumor dynamics are slow
 X0 = [1.0, 0.7, 1.0, 0.0]
 ACTION_SPACE = np.array([0.0, 0.5, 1.0, 2.0], dtype=np.float32)
 ACTION_TO_IDX = {float(a): i for i, a in enumerate(ACTION_SPACE)}
 I_THRESHOLD = 0.4
 T_CLEAR = 0.02  # tumor "cleared" for done/metric/bonus
-C_TOX = 8.0    # toxicity limit: C > C_tox -> terminate (safety constraint)
-STATE_MAX = 30.0  # ODE explosion guard: any state > 30 -> terminate
+C_TOX = 8.0    # toxicity limit: C > C_TOX -> terminate (safety constraint)
+STATE_MAX = 30.0  # ODE explosion guard: any state > STATE_MAX -> terminate
+
+# Reward clipping to avoid per-step extremes that destabilize offline RL
+REWARD_CLIP = (-100.0, 100.0)
+
+# Default reward version used in experiments / paper
+DEFAULT_REWARD_VERSION = 'v3'
+
+# Safe RL (CMDP): cost thresholds for constraint violation
+# c(s,a)=1 if I<0.3 (immune collapse) or N<0.4 (organ failure), else 0
+I_SAFE = 0.3   # immune safety threshold
+N_SAFE = 0.4   # normal cell safety threshold
+
+
+def transition_cost(s_curr):
+    """Cost for CMDP: 1 if constraint violated (I<0.3 or N<0.4), else 0.
+    Used in Lagrangian Safe RL."""
+    N, I = float(s_curr[0]), float(s_curr[2])
+    return 1.0 if (I < I_SAFE or N < N_SAFE) else 0.0
 
 
 def is_done(x):
@@ -91,68 +114,51 @@ def _sigmoid(x):
     return 1.0 / (1.0 + np.exp(-np.clip(x, -20, 20)))
 
 
-def reward_fn(s, dt, s_prev=None):
-    """
-    Paper-grade reward: r = (-2T - 0.3C - 0.5σ(Ith-I) + 0.3N)Δt + 10*1_{T<0.02}
-    -2T: strong tumor suppression
-    -0.3C: moderate toxicity (avoids "no treatment" optimal)
-    +0.3N: protect normal cells
-    """
-    N, T, I, C = s[:4]
-    r = -2.0 * T - 0.3 * C - 0.5 * _sigmoid(I_THRESHOLD - I) + 0.3 * N
-    r = r * dt
-    if T < T_CLEAR:
-        r += 10.0  # tumor cleared bonus
-    return r
+def transition_reward(s_prev, s_curr, dt, debug=False):
+    """Compute reward for transition (s_prev -> s_curr) with time step dt.
+    Implements v3 logic (only v3 present in this repo).
+    Crossing-only bonuses and per-step clipping are enforced.
+    Returns scalar reward (float) or (reward, info) if debug=True."""
+    # Expect s_prev or s_curr as raw (denormalized) states: [N, T, I, C]
+    N, T, I, C = float(s_curr[0]), float(s_curr[1]), float(s_curr[2]), float(s_curr[3])
+    prev_T = float(s_prev[1]) if s_prev is not None else T
+    prev_N = float(s_prev[0]) if s_prev is not None else N
+    prev_I = float(s_prev[2]) if s_prev is not None else I
 
-
-def reward_fn_v2(s, dt, s_prev=None):
-    """
-    Improved reward v2: progress shaping, stronger clearance, milestones.
-    Encourages tumor clearance (TumorClear > 0%).
-    """
-    N, T, I, C = s[:4]
-    cfg = {
-        "w_tumor": 3.0, "w_progress": 2.0, "w_normal": 0.5,
-        "w_immune": 2.0, "w_toxicity": 0.5, "R_clear": 50.0,
-        "C_ref": 2.0, "collapse": -20.0, "m5": 3.0, "m10": 5.0,
-    }
-    prev_T = s_prev[1] if s_prev is not None else T
-
-    tumor_penalty = -cfg["w_tumor"] * T * dt
-    progress = cfg["w_progress"] * (prev_T - T) * dt if s_prev is not None else 0.0
-    normal_reward = cfg["w_normal"] * N * dt
-    immune_penalty = -cfg["w_immune"] * max(0, 0.3 - I) * dt if I < 0.3 else 0.0
-    toxicity = -cfg["w_toxicity"] * np.tanh(C / cfg["C_ref"]) * dt
-    clearance = cfg["R_clear"] if T < T_CLEAR else 0.0
-    milestone = (cfg["m10"] if T < 0.1 else 0.0) + (cfg["m5"] if T < 0.05 else 0.0)
-    collapse = cfg["collapse"] if (N < 0.1 or I < 0.05) else 0.0
-
-    return tumor_penalty + progress + normal_reward + immune_penalty + toxicity + clearance + milestone + collapse
-
-
-def reward_fn_v3(s, dt, s_prev=None):
-    """
-    Reward v3: stronger toxicity penalty, higher R_clear, multi-stage milestones.
-    Scaled to match v2 range (~-200 to +100) to avoid CQL TD loss explosion.
-    """
-    N, T, I, C = s[:4]
-    prev_T = s_prev[1] if s_prev is not None else T
-
+    # v3: scaled, milestones only on first crossing of sub-thresholds
     r_tumor = -3.0 * T * dt
-    r_tox = -1.5 * np.tanh(C / 2.0) * dt  # stronger than v2 (0.5) but not excessive
-    R_clear = 50.0 if T < T_CLEAR else 0.0
-
-    # Milestones scaled by dt to avoid per-step explosion (was 35/step -> ~10k return)
-    r_milestone = 0.0
-    if T < 0.5:
-        r_milestone += 2.0 * dt
-    if T < 0.3:
-        r_milestone += 3.0 * dt
-    if T < 0.1:
-        r_milestone += 5.0 * dt
-
+    r_tox = -1.5 * np.tanh(C / 2.0) * dt
     r_progress = 2.0 * (prev_T - T) * dt if s_prev is not None else 0.0
-    r_collapse = -20.0 if (N < 0.1 or I < 0.05) else 0.0
+    R_clear = 50.0 if (prev_T >= T_CLEAR and T < T_CLEAR) else 0.0
+    r_milestone = 0.0
+    if prev_T >= 0.5 and T < 0.5:
+        r_milestone += 2.0 * dt
+    if prev_T >= 0.3 and T < 0.3:
+        r_milestone += 3.0 * dt
+    if prev_T >= 0.1 and T < 0.1:
+        r_milestone += 5.0 * dt
+    r_collapse = -20.0 if (N < 0.1 or I < 0.05) and (prev_N >= 0.1 and prev_I >= 0.05) else 0.0
+    r = r_tumor + r_tox + r_progress + R_clear + r_milestone + r_collapse
 
-    return r_tumor + r_tox + r_progress + R_clear + r_milestone + r_collapse
+    # Clip reward to avoid extremely large per-step values
+    r_clipped = float(np.clip(r, REWARD_CLIP[0], REWARD_CLIP[1]))
+
+    if debug:
+        info = {
+            'N': N, 'T': T, 'I': I, 'C': C,
+            'prev_T': prev_T, 'prev_N': prev_N, 'prev_I': prev_I,
+            'reward_raw': float(r), 'reward_clipped': r_clipped,
+            'reward_version': 'v3'
+        }
+        return r_clipped, info
+    return r_clipped
+
+
+# Backward compatibility: reward_fn(s, dt, s_prev) -> transition_reward(s_prev, s, dt)
+def reward_fn(s, dt, s_prev=None):
+    """Compat wrapper: reward_fn(s, dt, s_prev) delegates to transition_reward."""
+    return transition_reward(s_prev, s, dt)
+
+
+reward_fn_v2 = reward_fn
+reward_fn_v3 = reward_fn

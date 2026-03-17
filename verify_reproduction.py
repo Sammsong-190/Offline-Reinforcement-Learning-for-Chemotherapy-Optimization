@@ -130,6 +130,12 @@ def policy_cql(cql):
     return fn
 
 
+def policy_safe_cql():
+    """Load Safe CQL (Lagrangian) policy."""
+    from train_safe_cql import load_safe_cql_policy
+    return load_safe_cql_policy("safe_cql_model.pt")
+
+
 def main():
     from train_offline import PolicyNet
     import torch
@@ -183,6 +189,15 @@ def main():
             run_policy("IQL", policy_cql(iql))
         except Exception as e:
             print(f"IQL:         (load failed: {e})")
+
+    # 2d. Safe CQL (Lagrangian constrained)
+    if os.path.exists("safe_cql_model.pt"):
+        try:
+            run_policy("Safe CQL", policy_safe_cql())
+        except Exception as e:
+            print(f"Safe CQL:    (load failed: {e})")
+    else:
+        print("Safe CQL:    (no safe_cql_model.pt, run train_safe_cql.py)")
 
     # 3. Random
     run_policy("Random", policy_random)
