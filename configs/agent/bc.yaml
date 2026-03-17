@@ -1,0 +1,13 @@
+# BC 基线参数
+epochs: 200
+batch_size: 64
+learning_rate: 0.001
+val_ratio: 0.1
+patience: 30
+label_smoothing: 0.05
+weight_decay: 0.0001
+
+network:
+  hidden: 64
+  state_dim: 4
+  n_actions: 4

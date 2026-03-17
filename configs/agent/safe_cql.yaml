@@ -1,0 +1,22 @@
+# Safe CQL (Lagrangian) - 默认配置
+name: SafeCQL
+params:
+  actor_lr: 1.0e-4
+  critic_lr: 3.0e-4
+  lagrangian_lr: 1.0e-3
+  cost_limit: 0.1          # 安全预算 (Innovation)
+  gamma: 0.99
+  alpha_cql: 5.0
+  target_update_interval: 2000
+  n_critics: 2
+  n_steps: 200000
+  batch_size: 256
+
+safety:
+  i_safe: 0.3
+  n_safe: 0.4
+
+network:
+  hidden: 64
+  state_dim: 4
+  n_actions: 4

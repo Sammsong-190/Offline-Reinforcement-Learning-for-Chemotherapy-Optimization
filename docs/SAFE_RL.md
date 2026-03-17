@@ -34,11 +34,29 @@ c(s, a) = 1  if I < 0.3 (免疫崩溃) or N < 0.4 (器官衰竭)
 
 ```bash
 # 需先生成含 cost 的数据（自动检测并重新生成）
-python train_safe_cql.py
+python scripts/train.py --algo safe_cql
 
 # 或完整流程
 bash run_all.sh
 ```
+
+## 配置对比实验
+
+```bash
+# 严苛约束 (cost_limit=0.01)
+python scripts/train.py --algo safe_cql --agent-config configs/agent/safe_cql_strict.yaml
+
+# 宽松约束 (cost_limit=0.5)
+python scripts/train.py --algo safe_cql --agent-config configs/agent/safe_cql_loose.yaml
+```
+
+## 统一评估 (SCI 格式)
+
+```bash
+python scripts/evaluate.py --policies expert bc safe_cql cql random --seeds 42 123 456 -o results/eval_results.csv
+```
+
+输出 CSV 含: return_mean, constraint_violation_rate_pct, survival_pct 等，供 notebooks 画图。
 
 ## 实验设计（论文）
 

@@ -1,0 +1,43 @@
+# ODE 环境与奖励配置
+# Padmanabhan et al. 2017, 4-dim (N, T, I, C)
+
+ode:
+  dt: 0.3
+  max_steps: 300
+  x0: [1.0, 0.7, 1.0, 0.0]
+  n_sub: 5
+  state_max: 30.0
+
+params:
+  r1: 1.5
+  r2: 1.0
+  b1: 1.0
+  b2: 1.0
+  c1: 1.0
+  c2: 0.05
+  c3: 0.05
+  c4: 0.5
+  a1: 0.35
+  a2: 0.45
+  a3: 0.25
+  s: 0.33
+  rho: 0.3
+  alpha: 0.3
+  d1: 0.2
+  d2: 0.5
+
+action_space: [0.0, 0.5, 1.0, 2.0]
+
+thresholds:
+  t_clear: 0.02
+  c_tox: 8.0
+  i_threshold: 0.4
+  n_safe: 0.4
+  i_safe: 0.3
+
+reward:
+  version: v3
+  clip: [-100.0, 100.0]
+  w_tumor: 3.0
+  w_tox: 1.5
+  r_clear: 50.0

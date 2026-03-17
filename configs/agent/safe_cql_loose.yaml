@@ -1,0 +1,22 @@
+# Safe CQL 宽松约束 (对比实验)
+name: SafeCQL
+params:
+  actor_lr: 1.0e-4
+  critic_lr: 3.0e-4
+  lagrangian_lr: 1.0e-3
+  cost_limit: 0.5          # 宽松: 允许更多违规
+  gamma: 0.99
+  alpha_cql: 5.0
+  target_update_interval: 2000
+  n_critics: 2
+  n_steps: 200000
+  batch_size: 256
+
+safety:
+  i_safe: 0.25
+  n_safe: 0.35
+
+network:
+  hidden: 64
+  state_dim: 4
+  n_actions: 4

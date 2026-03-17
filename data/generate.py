@@ -210,3 +210,25 @@ def save_dataset(transitions, path='offline_dataset.npz'):
              done=done, timeout=timeout, action_space=ACTION_SPACE)
     print(f"Saved {len(transitions)} transitions to {path}")
     return path
+
+
+def save_dataset_d4rl(transitions, path='offline_dataset_d4rl.npz'):
+    """D4RL 兼容格式: observations, actions, rewards, next_observations, terminals, costs"""
+    s = np.array([t['s'] for t in transitions], dtype=np.float32)
+    a = np.array([t['a_idx'] for t in transitions], dtype=np.int64)
+    r = np.array([t['r'] for t in transitions], dtype=np.float32)
+    s_next = np.array([t['s_next'] for t in transitions], dtype=np.float32)
+    done = np.array([t['done'] for t in transitions], dtype=bool)
+    timeout = np.array([t.get('timeout', False) for t in transitions], dtype=bool)
+    c = np.array([t.get('c', 0.0) for t in transitions], dtype=np.float32)
+    terminals = done | timeout
+    np.savez(path,
+             observations=s,
+             actions=a,
+             rewards=r,
+             next_observations=s_next,
+             terminals=terminals,
+             costs=c,
+             action_space=ACTION_SPACE)
+    print(f"Saved D4RL format: {len(transitions)} transitions to {path}")
+    return path

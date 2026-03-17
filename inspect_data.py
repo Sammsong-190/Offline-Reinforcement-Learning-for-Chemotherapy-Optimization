@@ -8,7 +8,7 @@ import os
 path = "offline_dataset.npz"
 if not os.path.exists(path):
     print(f"文件不存在: {path}")
-    print("请先运行: python generate_offline_data.py")
+    print("请先运行: python scripts/generate_data.py -o offline_dataset.npz")
     exit(1)
 
 d = np.load(path)

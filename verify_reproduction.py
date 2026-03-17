@@ -132,8 +132,8 @@ def policy_cql(cql):
 
 def policy_safe_cql():
     """Load Safe CQL (Lagrangian) policy."""
-    from train_safe_cql import load_safe_cql_policy
-    return load_safe_cql_policy("safe_cql_model.pt")
+    from src.algos.safe_cql import SafeCQL
+    return SafeCQL().get_policy("safe_cql_model.pt")
 
 
 def main():
@@ -197,7 +197,7 @@ def main():
         except Exception as e:
             print(f"Safe CQL:    (load failed: {e})")
     else:
-        print("Safe CQL:    (no safe_cql_model.pt, run train_safe_cql.py)")
+        print("Safe CQL:    (no safe_cql_model.pt, run scripts/train.py --algo safe_cql)")
 
     # 3. Random
     run_policy("Random", policy_random)
