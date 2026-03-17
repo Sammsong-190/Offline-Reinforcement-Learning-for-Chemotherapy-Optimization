@@ -40,8 +40,9 @@ DEFAULT_REWARD_VERSION = 'v3'
 # Safe RL (CMDP): 二值 cost c ∈ {0, 1}
 # c=1: 违规 (Unsafe) | c=0: 安全 (Safe)
 # 阈值与 reward_fn 软惩罚区分: 此为硬约束
-I_SAFE = 0.3   # 免疫崩溃硬约束
-N_SAFE = 0.4   # 器官衰竭硬约束 (比 is_done 的 0.1 更早预警)
+# 目标违规率 5%-15%: 过严(0.3/0.4)导致 80%+ 违规，算法无法学习
+I_SAFE = 0.2   # 免疫崩溃硬约束 (0.3→0.2 放松，与 is_done 0.1 保持梯度)
+N_SAFE = 0.2   # 器官衰竭硬约束 (0.4→0.2 放松)
 
 
 def transition_cost(s_curr):

@@ -29,10 +29,10 @@ def main():
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     if args.preset == "safe":
-        # 更多 expert、更少 aggressive/balanced，expert 更少随机 → 目标 5%-15% 违规率
+        # 更多 expert/conservative、极少 aggressive，expert 更少随机 → 目标 5%-15% 违规率
         kw = dict(
-            expert_ratio=0.70, balanced_ratio=0.15, aggressive_ratio=0.05, conservative_ratio=0.10,
-            expert_balance_ratio=0.25, expert_epsilon=0.15, patient_scale=0.10,
+            expert_ratio=0.75, balanced_ratio=0.10, aggressive_ratio=0.02, conservative_ratio=0.13,
+            expert_balance_ratio=0.20, expert_epsilon=0.12, patient_scale=0.08,
         )
     else:
         kw = dict(expert_balance_ratio=0.6)
