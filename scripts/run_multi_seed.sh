@@ -1,6 +1,4 @@
 #!/bin/bash
-# 多种子实验 - SCI 要求
-# 单一种子的 RL 结果在 SCI 一区不被认可
 set -e
 SEEDS="42 123 456 789 1024"
 echo "Training with seeds: $SEEDS"

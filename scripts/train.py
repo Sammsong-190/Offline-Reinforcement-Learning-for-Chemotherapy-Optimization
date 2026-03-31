@@ -22,23 +22,31 @@ def load_config(path):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--algo", choices=["bc", "cql", "safe_cql"], default="safe_cql")
-    parser.add_argument("--config", default="configs/experiment/train_safe.yaml")
-    parser.add_argument("--agent-config", default=None, help="e.g. agent/safe_cql_strict.yaml")
+    parser.add_argument(
+        "--algo", choices=["bc", "cql", "safe_cql"], default="safe_cql")
+    parser.add_argument(
+        "--config", default="configs/experiment/train_safe.yaml")
+    parser.add_argument("--agent-config", default=None,
+                        help="e.g. agent/safe_cql_strict.yaml")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--data", default=None, help="Override data path")
     parser.add_argument("--save", default=None, help="Override save path")
     parser.add_argument("--cost-limit", type=float, default=None,
-                        help="Safe CQL: cost budget ε (Strict=0.01, Moderate=0.1, Loose=0.5)")
+                        help="Safe CQL: cost budget (0.01/0.1/0.5)")
+    parser.add_argument("--log-lambda", type=int, default=0,
+                        help="Safe CQL: log lambda every N steps for Figure A (e.g. 1000)")
     args = parser.parse_args()
 
     from env.robust import set_seed
     set_seed(args.seed)
 
     cfg = load_config(args.config) if Path(args.config).exists() else {}
-    data_path = args.data or cfg.get("data", {}).get("path", "data/raw/offline_dataset.npz")
-    data_path = str(ROOT / data_path) if not Path(data_path).is_absolute() else data_path
-    save_path = args.save or cfg.get("output", {}).get("save_name", "safe_cql_model.pt")
+    data_path = args.data or cfg.get("data", {}).get(
+        "path", "data/raw/offline_dataset.npz")
+    data_path = str(
+        ROOT / data_path) if not Path(data_path).is_absolute() else data_path
+    save_path = args.save or cfg.get("output", {}).get(
+        "save_name", "safe_cql_model.pt")
 
     # Ensure data exists
     if not Path(data_path).exists():
@@ -48,7 +56,8 @@ def main():
         else:
             print("Generating data...")
             from data.generate import generate_dataset, save_dataset
-            data = generate_dataset(n_trajectories=1000, use_reward_v3=True, state_noise_sigma=0.02, expert_balance_ratio=0.6)
+            data = generate_dataset(n_trajectories=1000, use_reward_v3=True,
+                                    state_noise_sigma=0.02, expert_balance_ratio=0.6)
             save_dataset(data, data_path)
 
     if args.algo == "safe_cql":
@@ -56,7 +65,8 @@ def main():
         agent_cfg = load_config(ac_path) if (ROOT / ac_path).exists() else {}
         p = agent_cfg.get("params", agent_cfg)
         net = agent_cfg.get("network", {})
-        cost_limit = args.cost_limit if args.cost_limit is not None else p.get("cost_limit", 0.1)
+        cost_limit = args.cost_limit if args.cost_limit is not None else p.get(
+            "cost_limit", 0.1)
         algo = __import__("src.algos.safe_cql", fromlist=["SafeCQL"]).SafeCQL(
             actor_lr=p.get("actor_lr", 1e-4),
             critic_lr=p.get("critic_lr", p.get("learning_rate", 3e-4)),
@@ -68,10 +78,13 @@ def main():
             state_dim=net.get("state_dim", 4),
             n_actions=net.get("n_actions", 4),
         )
-        algo.train(data_path, n_steps=p.get("n_steps", 200000), batch_size=p.get("batch_size", 256), save_path=save_path)
+        algo.train(data_path, n_steps=p.get("n_steps", 200000),
+                   batch_size=p.get("batch_size", 256), save_path=save_path,
+                   log_lambda_every=args.log_lambda)
     elif args.algo == "bc":
         from train_offline import train_bc
-        train_bc(data_path=data_path, save_path=save_path.replace("safe_cql", "bc") if "safe_cql" in save_path else "bc_policy.pt")
+        train_bc(data_path=data_path, save_path=save_path.replace(
+            "safe_cql", "bc") if "safe_cql" in save_path else "bc_policy.pt")
     elif args.algo == "cql":
         from train_cql import train_cql
         train_cql(data_path=data_path, save_path="cql_model.d3")
