@@ -21,14 +21,17 @@ def main():
     from src.evaluation import Evaluator, PyTorchAgent
 
     agents = {}
+    seed = 42
     for limit in [0.01, 0.1, 0.5]:
-        for name in [f"safe_cql_limit{limit}.pt", f"safe_cql_limit_{limit}.pt"]:
-            path = ROOT / args.checkpoint_dir / name
-            if path.exists():
-                agents[f"SafeCQL_ε={limit}"] = PyTorchAgent(str(path), "safe_cql")
-                break
+        path = ROOT / args.checkpoint_dir / f"safe_cql_limit{limit}_seed{seed}.pt"
+        if path.exists():
+            agents[f"SafeCQL_ε={limit}"] = PyTorchAgent(str(path), "safe_cql")
         else:
-            print(f"Skip (not found): checkpoints/safe_cql_limit{limit}.pt")
+            legacy = ROOT / args.checkpoint_dir / f"safe_cql_limit{limit}.pt"
+            if legacy.exists():
+                agents[f"SafeCQL_ε={limit}"] = PyTorchAgent(str(legacy), "safe_cql")
+            else:
+                print(f"Skip (not found): {path.name}")
 
     if not agents and (ROOT / "safe_cql_model.pt").exists():
         agents["SafeCQL"] = PyTorchAgent(str(ROOT / "safe_cql_model.pt"), "safe_cql")

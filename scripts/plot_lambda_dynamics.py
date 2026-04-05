@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--dir", default="checkpoints")
+    p.add_argument("--seed", type=int, default=42, help="与训练 --seed 一致")
     p.add_argument("-o", "--output", default="results/lambda_dynamics.png")
     args = p.parse_args()
 
@@ -26,8 +27,11 @@ def main():
         return 1
 
     data = {}
+    s = args.seed
     for limit in [0.01, 0.1, 0.5]:
-        path = ROOT / args.dir / f"safe_cql_limit{limit}_lambda.json"
+        path = ROOT / args.dir / f"safe_cql_limit{limit}_seed{s}_lambda.json"
+        if not path.exists():
+            path = ROOT / args.dir / f"safe_cql_limit{limit}_lambda.json"
         if path.exists():
             with open(path) as f:
                 data[limit] = json.load(f)

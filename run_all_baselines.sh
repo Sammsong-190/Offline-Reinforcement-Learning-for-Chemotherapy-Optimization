@@ -20,7 +20,7 @@ python train_cql.py --data "$DATA" --save cql_model.d3
 
 echo ""
 echo "=== 3. Safe CQL (Lagrangian) ==="
-python scripts/train.py --algo safe_cql --data "$DATA" --save safe_cql_model.pt
+python scripts/train.py --algo safe_cql --data "$DATA" --seed 42
 
 echo ""
 echo "=== 4. 评估 (多种子) ==="

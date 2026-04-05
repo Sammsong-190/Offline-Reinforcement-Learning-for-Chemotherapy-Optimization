@@ -10,11 +10,12 @@ fi
 
 mkdir -p checkpoints results
 
-echo "=== 1. 训练三组 Safe CQL (含 lambda 记录) ==="
+SEED="${SEED:-42}"
+echo "=== 1. 训练三组 Safe CQL (含 lambda 记录), seed=$SEED ==="
 for limit in 0.01 0.1 0.5; do
   echo "--- cost_limit=$limit ---"
   python scripts/train.py --algo safe_cql --data "$DATA" --cost-limit "$limit" \
-    --save "checkpoints/safe_cql_limit${limit}.pt" --log-lambda 1000
+    --seed "$SEED" --log-lambda 1000
 done
 
 echo ""

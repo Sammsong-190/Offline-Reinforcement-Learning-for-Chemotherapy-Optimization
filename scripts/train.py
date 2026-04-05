@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
 统一训练入口
+Safe CQL 默认 checkpoint（勿覆盖）: checkpoints/safe_cql_limit{cost_limit}_seed{seed}.pt
+例: safe_cql_limit0.1_seed42.pt；自定义路径请传 --save
 Usage:
   python scripts/train.py --algo safe_cql [--config configs/experiment/train_safe.yaml]
   python scripts/train.py --algo bc
@@ -45,8 +47,7 @@ def main():
         "path", "data/raw/offline_dataset.npz")
     data_path = str(
         ROOT / data_path) if not Path(data_path).is_absolute() else data_path
-    save_path = args.save or cfg.get("output", {}).get(
-        "save_name", "safe_cql_model.pt")
+    user_save = args.save
 
     # Ensure data exists
     if not Path(data_path).exists():
@@ -67,6 +68,14 @@ def main():
         net = agent_cfg.get("network", {})
         cost_limit = args.cost_limit if args.cost_limit is not None else p.get(
             "cost_limit", 0.1)
+        # 冻结命名: checkpoints/safe_cql_limit{cost_limit}_seed{seed}.pt
+        if user_save is not None:
+            save_path = user_save
+        else:
+            ckpt_dir = ROOT / "checkpoints"
+            ckpt_dir.mkdir(parents=True, exist_ok=True)
+            save_path = str(
+                ckpt_dir / f"safe_cql_limit{cost_limit}_seed{args.seed}.pt")
         algo = __import__("src.algos.safe_cql", fromlist=["SafeCQL"]).SafeCQL(
             actor_lr=p.get("actor_lr", 1e-4),
             critic_lr=p.get("critic_lr", p.get("learning_rate", 3e-4)),
@@ -83,11 +92,15 @@ def main():
                    log_lambda_every=args.log_lambda)
     elif args.algo == "bc":
         from train_offline import train_bc
-        train_bc(data_path=data_path, save_path=save_path.replace(
-            "safe_cql", "bc") if "safe_cql" in save_path else "bc_policy.pt")
+        if user_save is not None:
+            bc_path = user_save
+        else:
+            sp = cfg.get("output", {}).get("save_name", "safe_cql_model.pt")
+            bc_path = sp.replace("safe_cql", "bc") if "safe_cql" in sp else "bc_policy.pt"
+        train_bc(data_path=data_path, save_path=bc_path)
     elif args.algo == "cql":
         from train_cql import train_cql
-        train_cql(data_path=data_path, save_path="cql_model.d3")
+        train_cql(data_path=data_path, save_path=user_save or "cql_model.d3")
 
 
 if __name__ == "__main__":

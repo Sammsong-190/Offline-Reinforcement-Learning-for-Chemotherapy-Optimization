@@ -1,6 +1,7 @@
 """
 Verify reproduction: compare BC vs Expert vs Random vs Fixed-dose baselines
 """
+import os
 import warnings
 warnings.filterwarnings("ignore", message="Gym has been unmaintained")
 warnings.filterwarnings("ignore", category=UserWarning, module="gym")
@@ -131,15 +132,16 @@ def policy_cql(cql):
 
 
 def policy_safe_cql():
-    """Load Safe CQL (Lagrangian) policy."""
+    """Load Safe CQL；优先新默认名，其次 safe_cql_model.pt"""
     from src.algos.safe_cql import SafeCQL
-    return SafeCQL().get_policy("safe_cql_model.pt")
+    p = "checkpoints/safe_cql_limit0.1_seed42.pt" if os.path.exists(
+        "checkpoints/safe_cql_limit0.1_seed42.pt") else "safe_cql_model.pt"
+    return SafeCQL().get_policy(p)
 
 
 def main():
     from train_offline import PolicyNet
     import torch
-    import os
 
     n_ep = 20  # robust: more episodes for stable metrics
     results = []
@@ -191,13 +193,13 @@ def main():
             print(f"IQL:         (load failed: {e})")
 
     # 2d. Safe CQL (Lagrangian constrained)
-    if os.path.exists("safe_cql_model.pt"):
+    if os.path.exists("checkpoints/safe_cql_limit0.1_seed42.pt") or os.path.exists("safe_cql_model.pt"):
         try:
             run_policy("Safe CQL", policy_safe_cql())
         except Exception as e:
             print(f"Safe CQL:    (load failed: {e})")
     else:
-        print("Safe CQL:    (no safe_cql_model.pt, run scripts/train.py --algo safe_cql)")
+        print("Safe CQL:    (no checkpoint, run scripts/train.py --algo safe_cql)")
 
     # 3. Random
     run_policy("Random", policy_random)

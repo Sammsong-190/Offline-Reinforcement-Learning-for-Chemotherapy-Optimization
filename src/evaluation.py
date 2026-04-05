@@ -186,8 +186,10 @@ def build_agents(root: Path) -> Dict[str, Agent]:
     agents["Random"] = RandomAgent()
     if (root / "bc_policy.pt").exists():
         agents["BC"] = PyTorchAgent(str(root / "bc_policy.pt"), "bc")
-    if (root / "safe_cql_model.pt").exists():
-        agents["SafeCQL"] = PyTorchAgent(str(root / "safe_cql_model.pt"), "safe_cql")
+    for p in (root / "checkpoints" / "safe_cql_limit0.1_seed42.pt", root / "safe_cql_model.pt"):
+        if p.exists():
+            agents["SafeCQL"] = PyTorchAgent(str(p), "safe_cql")
+            break
     if (root / "cql_model.d3").exists():
         try:
             agents["CQL"] = D3RLPyAgent(str(root / "cql_model.d3"))
