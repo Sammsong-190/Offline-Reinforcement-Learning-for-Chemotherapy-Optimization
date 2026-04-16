@@ -4,6 +4,8 @@ CMDP: max E[sum r] s.t. E[sum c] <= epsilon
 
 论文算法对应: src/algos/safe_cql.py 中的 update() 与 Lagrangian Loss
 """
+from pathlib import Path
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -15,8 +17,9 @@ from src.models import Actor, Critic, SafetyCritic
 
 class SafeCQL(BaseAlgo):
     """
-    Lagrangian Safe CQL.
-    update() 包含: Reward Q (CQL), Cost Q, Lagrange, Actor 四步。
+    Lagrangian Safe CQL（双重保守）.
+    update() 包含: Reward Q (CQL 压低 OOD Q_R)、Cost Q (CQL 推高 OOD Q_C + TD 目标用 max 悲观 bootstrap)、
+    Lagrange、Actor 四步。
     """
 
     def __init__(
@@ -70,7 +73,7 @@ class SafeCQL(BaseAlgo):
     def update(self, ss, aa, rr, cc, ss_next, term_b):
         """
         单步更新。对应论文中的 Lagrangian Loss:
-        L = L_CQL(Q_R) + L_TD(Q_C) + L_λ(λ) + L_π(π)
+        L = L_CQL(Q_R) + L_TD(Q_C) + L_CQL-cost(Q_C) + L_λ(λ) + L_π(π)
         """
         aa_onehot = F.one_hot(aa, self.n_actions).float()
 
@@ -96,17 +99,23 @@ class SafeCQL(BaseAlgo):
             [p for net in self.q_r_nets for p in net.parameters()], 10.0)
         self.opt_qr.step()
 
-        # --- 2. Cost Q (MSE) ---
+        # --- 2. Cost Q (Double-Conservative: TD 用 max 悲观 bootstrap + CQL 推高 OOD 的 Q_C) ---
         q_c = sum(net(ss).gather(1, aa.unsqueeze(1)).squeeze(1)
                   for net in self.q_c_nets) / self.n_critics
         with torch.no_grad():
             next_a = self.actor(ss_next).argmax(-1)
-            q_c_next = torch.min(torch.stack([t(ss_next).gather(
+            q_c_next = torch.max(torch.stack([t(ss_next).gather(
                 1, next_a.unsqueeze(1)).squeeze(1) for t in self.q_c_targets]), dim=0)[0]
             c_td_target = cc.squeeze() + self.gamma * (1 - term_b.squeeze()) * q_c_next
-            # cost ∈ [0,1]，discounted sum 有界
             c_td_target = c_td_target.clamp(0.0, 10.0)
-        q_c_loss = F.mse_loss(q_c, c_td_target)
+        mse_c_loss = F.mse_loss(q_c, c_td_target)
+        log_sum_exp_qc = torch.logsumexp(torch.stack(
+            [net(ss) for net in self.q_c_nets], dim=0).mean(0), dim=-1)
+        qc_data = (torch.stack([net(ss) for net in self.q_c_nets], dim=0).mean(
+            0) * aa_onehot).sum(-1)
+        cost_cql_penalty = (log_sum_exp_qc - qc_data).mean()
+        alpha_cost = self.alpha_cql
+        q_c_loss = mse_c_loss + alpha_cost * cost_cql_penalty
         self.opt_qc.zero_grad()
         q_c_loss.backward()
         torch.nn.utils.clip_grad_norm_(
@@ -152,6 +161,8 @@ class SafeCQL(BaseAlgo):
         return {
             "q_r_loss": q_r_loss.item(),
             "q_c_loss": q_c_loss.item(),
+            "q_c_mse": mse_c_loss.item(),
+            "cql_cost_penalty": cost_cql_penalty.item(),
             "actor_loss": actor_loss.item(),
             "lambda": torch.exp(self.log_lambda).item(),
             "current_risk": current_risk.item(),  # E[Q_C] under π，真实 Cost 预估值
@@ -185,21 +196,25 @@ class SafeCQL(BaseAlgo):
                     "step": step + 1, "lambda": losses["lambda"],
                     "current_risk": losses.get("current_risk", 0),
                     "qr_loss": losses["q_r_loss"], "qc_loss": losses["q_c_loss"],
+                    "q_c_mse": losses.get("q_c_mse", 0),
+                    "cql_cost_penalty": losses.get("cql_cost_penalty", 0),
                 })
             if (step + 1) % 10000 == 0:
                 risk = losses.get("current_risk", 0)
                 print(f"  step {step+1}: λ={losses['lambda']:.2f} Q_C(π)={risk:.4f} (limit={self.cost_limit}) "
-                      f"qr_loss={losses['q_r_loss']:.4f} qc_loss={losses['q_c_loss']:.4f}")
+                      f"qr_loss={losses['q_r_loss']:.4f} qc_loss={losses['q_c_loss']:.4f} "
+                      f"qc_mse={losses.get('q_c_mse', 0):.4f} cql_c={losses.get('cql_cost_penalty', 0):.4f}")
 
         torch.save({"actor": self.actor.state_dict(), "q_r": self.q_r_nets[0].state_dict(),
                     "q_c": self.q_c_nets[0].state_dict()}, save_path)
         print(f"Saved {save_path}")
         if lambda_history:
             import json
-            log_path = str(save_path).replace(".pt", "_lambda.json")
-            with open(log_path, "w") as f:
+            ckpt = Path(save_path)
+            log_path = ckpt.with_name(ckpt.stem + "_lambda.json")
+            with open(log_path, "w", encoding="utf-8") as f:
                 json.dump({"cost_limit": self.cost_limit, "history": lambda_history}, f, indent=0)
-            print(f"Saved lambda history: {log_path}")
+            print(f"Saved lambda history: {log_path.resolve()}")
         return self.actor
 
     def get_policy(self, path=None):

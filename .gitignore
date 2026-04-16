@@ -26,3 +26,8 @@ experiments/figures/
 .idea/
 .vscode/
 *.swp
+
+# OS / local artifacts
+.DS_Store
+checkpoints/
+step*_*.png

@@ -96,17 +96,33 @@ def behavior_policy(s):
     return _policy_by_type(s, t)
 
 
-def _is_done(x):
-    return is_done(x)
+def _is_done(x, c_tox=None):
+    return is_done(x, c_tox=c_tox)
 
 
 def collect_trajectory(policy, params=None, x0=None, randomize_patient=False, reward_fn=None,
-                      state_noise_sigma=0.0, patient_scale=0.15):
-    """Collect one trajectory. state_noise_sigma: add noise to state for policy input (data aug)."""
+                      state_noise_sigma=0.0, patient_scale=0.15, patient_ctx=None, rng=None):
+    """Collect one trajectory.
+
+    patient_ctx: 可选，来自 PatientGenerator.from_cohort()，含 params, c_tox, i_safe, n_safe,
+                 sde_sigma, cohort。若提供则不再使用 randomize_patient 对 DEFAULT_PARAMS 扰动。
+    rng: 仅 SDE 步进使用 np.random.Generator（可复现）。
+    """
     from env.chemo_env import reward_fn as default_reward
     reward_fn = reward_fn or default_reward
-    params = randomize_params(params, scale=patient_scale) if randomize_patient else (
-        params or DEFAULT_PARAMS)
+    if patient_ctx is not None:
+        params = patient_ctx["params"]
+        c_tox = patient_ctx.get("c_tox")
+        i_safe = patient_ctx.get("i_safe")
+        n_safe = patient_ctx.get("n_safe")
+        sde_sigma = patient_ctx.get("sde_sigma", 0.0)
+        cohort_name = patient_ctx.get("cohort", "custom")
+    else:
+        params = randomize_params(params, scale=patient_scale) if randomize_patient else (
+            params or DEFAULT_PARAMS)
+        c_tox = n_safe = i_safe = None
+        sde_sigma = 0.0
+        cohort_name = "default"
     x = np.array(x0 or X0, dtype=np.float32)
     transitions = []
     for step in range(MAX_STEPS):
@@ -116,21 +132,23 @@ def collect_trajectory(policy, params=None, x0=None, randomize_patient=False, re
             a = discretize_action(policy(s_for_policy))
         except TypeError:
             a = discretize_action(policy(s_for_policy, epsilon=0.2))
-        x_next = step_ode(x, a, DT, params)
-        done = _is_done(x_next)
+        x_next = step_ode(x, a, DT, params, sde_sigma=sde_sigma, rng=rng)
+        done = _is_done(x_next, c_tox=c_tox)
         timeout = (step == MAX_STEPS - 1) and not done  # hit max steps
         r = reward_fn(x_next, DT, s_prev=x)
         from env.chemo_env import transition_cost
-        c = transition_cost(x_next)
+        c = transition_cost(x_next, i_safe=i_safe, n_safe=n_safe)
         s_norm = normalize_state(s)
         s_next_norm = normalize_state(x_next)
-        transitions.append({
+        row = {
             's': s_norm, 's_raw': s.copy(),
             'a': a, 'a_idx': action_to_index(a),
             'r': r, 'c': c, 's_next': s_next_norm, 's_next_raw': x_next.copy(),
             'done': done,
             'timeout': timeout,
-        })
+            'cohort': cohort_name,
+        }
+        transitions.append(row)
         x = x_next
         if done:
             break
@@ -159,15 +177,20 @@ def generate_dataset(
     expert_epsilon=0.2,
     patient_scale=0.15,
     seed=None,
+    use_cohorts=False,
+    cohort_jitter=0.0,
+    cohort_weights=None,
 ):
     """
     Generate offline dataset. Default: 50% expert, 30% balanced, 10% aggressive, 10% conservative.
     seed: 复现性 (SCI 红线)。若提供则 set_seed(seed) 并用于 traj shuffle。
+    use_cohorts: True 时使用 PatientGenerator 三类虚拟队列 + SDE 步进（替代 randomize_patient 高斯扰动）。
     """
     if seed is not None:
         from env.robust import set_seed
         set_seed(seed)
     rng = np.random.RandomState(seed if seed is not None else 0)
+    rng_sde = np.random.default_rng(seed if seed is not None else 0)
 
     from env.chemo_env import reward_fn_v2, reward_fn_v3
     reward_fn_impl = reward_fn_v3 if use_reward_v3 else reward_fn_v2
@@ -182,13 +205,23 @@ def generate_dataset(
 
     all_transitions = []
     reward_fn = reward_fn_impl
+    if use_cohorts:
+        from env.patient_cohorts import PatientGenerator
+        pgen = PatientGenerator(rng=rng_sde)
 
     for traj_type in traj_types:
         policy = _policy_for_traj(traj_type, expert_balance_ratio, expert_epsilon)
-        traj = collect_trajectory(
-            policy, randomize_patient=randomize_patient, reward_fn=reward_fn,
-            state_noise_sigma=state_noise_sigma, patient_scale=patient_scale,
-        )
+        if use_cohorts:
+            ctx = pgen.sample(weights=cohort_weights, jitter=cohort_jitter)
+            traj = collect_trajectory(
+                policy, randomize_patient=False, reward_fn=reward_fn,
+                state_noise_sigma=state_noise_sigma, patient_ctx=ctx, rng=rng_sde,
+            )
+        else:
+            traj = collect_trajectory(
+                policy, randomize_patient=randomize_patient, reward_fn=reward_fn,
+                state_noise_sigma=state_noise_sigma, patient_scale=patient_scale,
+            )
         all_transitions.extend(traj)
 
     # Action distribution
@@ -200,6 +233,10 @@ def generate_dataset(
     c_arr = np.array([t.get("c", 0.0) for t in all_transitions])
     cost_rate = c_arr.mean() * 100
     print(f"  Cost 违规率: {cost_rate:.2f}% (理想 5%-15%)")
+    if use_cohorts:
+        cohorts = [t.get("cohort", "default") for t in all_transitions]
+        uniq, cnt = np.unique(cohorts, return_counts=True)
+        print("  Cohort mix (transitions): " + ", ".join(f"{u}:{100*c/len(cohorts):.1f}%" for u, c in zip(uniq, cnt)))
     return all_transitions
 
 
@@ -214,8 +251,9 @@ def save_dataset(transitions, path='offline_dataset.npz'):
     s_next_raw = np.array([t['s_next_raw'] for t in transitions])
     done = np.array([t['done'] for t in transitions])
     timeout = np.array([t.get('timeout', False) for t in transitions])
+    cohort = np.array([t.get('cohort', 'default') for t in transitions], dtype='U32')
     np.savez(path, s=s, s_raw=s_raw, a=a, r=r, c=c, s_next=s_next, s_next_raw=s_next_raw,
-             done=done, timeout=timeout, action_space=ACTION_SPACE)
+             done=done, timeout=timeout, cohort=cohort, action_space=ACTION_SPACE)
     print(f"Saved {len(transitions)} transitions to {path}")
     return path
 

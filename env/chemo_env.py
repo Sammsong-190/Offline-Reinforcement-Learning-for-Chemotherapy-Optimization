@@ -31,6 +31,9 @@ T_CLEAR = 0.02  # tumor "cleared" for done/metric/bonus
 C_TOX = 8.0    # toxicity limit: C > C_TOX -> terminate (safety constraint)
 STATE_MAX = 30.0  # ODE explosion guard: any state > STATE_MAX -> terminate
 
+# SDE: σ=0 退化为原 ODE；>0 时在每子步加入扩散项（未观测变异 / 代谢噪声）
+SDE_DEFAULT_SIGMA = 0.0
+
 # Reward clipping to avoid per-step extremes that destabilize offline RL
 REWARD_CLIP = (-100.0, 100.0)
 
@@ -45,19 +48,71 @@ I_SAFE = 0.2   # 免疫崩溃硬约束 (0.3→0.2 放松，与 is_done 0.1 保�
 N_SAFE = 0.2   # 器官衰竭硬约束 (0.4→0.2 放松)
 
 
-def transition_cost(s_curr):
-    """二值指示函数: c=1 if 违规 else 0. SCI 标准 c(s,a) ∈ {0,1}."""
+def transition_cost(s_curr, i_safe=None, n_safe=None):
+    """二值指示函数: c=1 if 违规 else 0. 可传入队列特异阈值。"""
+    thr_i = I_SAFE if i_safe is None else float(i_safe)
+    thr_n = N_SAFE if n_safe is None else float(n_safe)
     N, I = float(s_curr[0]), float(s_curr[2])
-    return 1.0 if (I < I_SAFE or N < N_SAFE) else 0.0
+    return 1.0 if (I < thr_i or N < thr_n) else 0.0
 
 
 get_cost = transition_cost  # alias for paper/API
 
 
-def is_done(x):
-    """Tumor cleared | organ failure | immune collapse | toxicity limit | ODE explosion"""
+def termination_info(x, patient_ctx=None):
+    """
+    单次状态判断终止原因（用于 Rollout / Kaplan-Meier）。
+    patient_ctx is None: 与旧版 is_done(x) 一致（器官 N<0.1、免疫 I<0.1，不按 I_SAFE 终止）。
+    patient_ctx 为 dict: 毒性致死 = I < i_safe 或 C > c_tox；治愈 = T < T_CLEAR。
+
+    返回 (done: bool, reason: str)
+    reason ∈ {running, cured, toxicity_death, organ_failure, immune_collapse, state_explosion, timeout}
+    """
+    T, N, I, C = float(x[1]), float(x[0]), float(x[2]), float(x[3])
+    mx = float(np.max(x))
+
+    if patient_ctx is None:
+        ct = float(C_TOX)
+        smax = float(STATE_MAX)
+        if T < T_CLEAR:
+            return True, "cured"
+        if C > ct:
+            return True, "toxicity_death"
+        if N < 0.1:
+            return True, "organ_failure"
+        if I < 0.1:
+            return True, "immune_collapse"
+        if mx > smax:
+            return True, "state_explosion"
+        return False, "running"
+
+    c_tox = float(patient_ctx.get("c_tox", C_TOX))
+    i_safe = float(patient_ctx.get("i_safe", I_SAFE))
+    n_organ = float(patient_ctx.get("n_safe", N_SAFE))
+    smax = float(patient_ctx.get("state_max", STATE_MAX))
+    if T < T_CLEAR:
+        return True, "cured"
+    if C > c_tox:
+        return True, "toxicity_death"
+    if I < i_safe:
+        return True, "toxicity_death"
+    if N < n_organ:
+        return True, "organ_failure"
+    if I < 0.1:
+        return True, "immune_collapse"
+    if mx > smax:
+        return True, "state_explosion"
+    return False, "running"
+
+
+def is_done(x, c_tox=None, state_max=None, patient_ctx=None):
+    """兼容旧 API；若传入 patient_ctx 则与 termination_info 一致。"""
+    if patient_ctx is not None:
+        return termination_info(x, patient_ctx)[0]
     T, N, I, C = x[1], x[0], x[2], x[3]
-    return (T < T_CLEAR) or (N < 0.1) or (I < 0.1) or (C > C_TOX) or (np.max(x) > STATE_MAX)
+    ct = C_TOX if c_tox is None else float(c_tox)
+    smax = STATE_MAX if state_max is None else float(state_max)
+    return (T < T_CLEAR) or (N < 0.1) or (I < 0.1) or (C > ct) or (np.max(x) > smax)
 
 
 def cancer_ode(t, x, u, params):
@@ -71,14 +126,21 @@ def cancer_ode(t, x, u, params):
     return [dN, dT, dI, dC]
 
 
-def step_ode(x, u, dt, params=None, n_sub=5):
-    """Euler integration with clip. State > STATE_MAX indicates ODE explosion."""
+def step_ode(x, u, dt, params=None, n_sub=5, sde_sigma=None, rng=None):
+    """Euler integration；可选 SDE 项: x += h*dx + sigma*sqrt(h)*N(0,I)（每子步）。"""
     params = params or DEFAULT_PARAMS
+    sig = SDE_DEFAULT_SIGMA if sde_sigma is None else float(sde_sigma)
     h = dt / n_sub
     x = np.asarray(x, dtype=np.float64)
     for _ in range(n_sub):
         dx = cancer_ode(0.0, x, u, params)
         x = x + h * np.asarray(dx)
+        if sig > 0.0:
+            if rng is not None and isinstance(rng, np.random.Generator):
+                z = rng.standard_normal(4)
+            else:
+                z = np.random.randn(4)
+            x = x + sig * np.sqrt(h) * z
         x = np.clip(x, 0.0, 50.0)
     return x.astype(np.float32)
 

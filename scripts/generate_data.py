@@ -19,6 +19,8 @@ def main():
     parser.add_argument("--d4rl", action="store_true", help="Also save D4RL format")
     parser.add_argument("--preset", choices=["default", "safe"], default="default",
                         help="default: 50/30/10/10 mix, ~25%% cost; safe: 70/15/5/10, target 5-15%% cost")
+    parser.add_argument("--cohorts", action="store_true",
+                        help="虚拟患者三类亚群 + SDE 步进（PatientGenerator），替代均匀参数噪声")
     args = parser.parse_args()
 
     from env.robust import set_seed
@@ -42,6 +44,7 @@ def main():
         use_reward_v3=True,
         state_noise_sigma=0.02,
         seed=args.seed,
+        use_cohorts=args.cohorts,
         **kw,
     )
     save_dataset(data, str(out_path))
