@@ -28,6 +28,8 @@ ACTION_SPACE = np.array([0.0, 0.5, 1.0, 2.0], dtype=np.float32)
 ACTION_TO_IDX = {float(a): i for i, a in enumerate(ACTION_SPACE)}
 I_THRESHOLD = 0.4
 T_CLEAR = 0.02  # tumor "cleared" for done/metric/bonus
+# 肿瘤负荷过高 → 癌症进展致死（避免「零剂量苟满 300 步」的 reward hacking）
+T_FATAL = 1.5  # 初始 T≈0.7；超过此阈值视为肿瘤相关死亡（可与队列 t_fatal 覆盖）
 C_TOX = 8.0    # toxicity limit: C > C_TOX -> terminate (safety constraint)
 STATE_MAX = 30.0  # ODE explosion guard: any state > STATE_MAX -> terminate
 
@@ -62,11 +64,11 @@ get_cost = transition_cost  # alias for paper/API
 def termination_info(x, patient_ctx=None):
     """
     单次状态判断终止原因（用于 Rollout / Kaplan-Meier）。
-    patient_ctx is None: 与旧版 is_done(x) 一致（器官 N<0.1、免疫 I<0.1，不按 I_SAFE 终止）。
-    patient_ctx 为 dict: 毒性致死 = I < i_safe 或 C > c_tox；治愈 = T < T_CLEAR。
+    patient_ctx is None: 与 is_done(x) 无 ctx 分支一致。
+    patient_ctx 为 dict: 可含 t_fatal（肿瘤致死阈值）；毒性 = I < i_safe 或 C > c_tox。
 
     返回 (done: bool, reason: str)
-    reason ∈ {running, cured, toxicity_death, organ_failure, immune_collapse, state_explosion, timeout}
+    reason ∈ {running, cured, cancer_death, toxicity_death, organ_failure, immune_collapse, state_explosion}
     """
     T, N, I, C = float(x[1]), float(x[0]), float(x[2]), float(x[3])
     mx = float(np.max(x))
@@ -74,8 +76,11 @@ def termination_info(x, patient_ctx=None):
     if patient_ctx is None:
         ct = float(C_TOX)
         smax = float(STATE_MAX)
+        t_fatal = float(T_FATAL)
         if T < T_CLEAR:
             return True, "cured"
+        if T > t_fatal:
+            return True, "cancer_death"
         if C > ct:
             return True, "toxicity_death"
         if N < 0.1:
@@ -86,12 +91,15 @@ def termination_info(x, patient_ctx=None):
             return True, "state_explosion"
         return False, "running"
 
+    t_fatal = float(patient_ctx.get("t_fatal", T_FATAL))
     c_tox = float(patient_ctx.get("c_tox", C_TOX))
     i_safe = float(patient_ctx.get("i_safe", I_SAFE))
     n_organ = float(patient_ctx.get("n_safe", N_SAFE))
     smax = float(patient_ctx.get("state_max", STATE_MAX))
     if T < T_CLEAR:
         return True, "cured"
+    if T > t_fatal:
+        return True, "cancer_death"
     if C > c_tox:
         return True, "toxicity_death"
     if I < i_safe:
@@ -112,7 +120,14 @@ def is_done(x, c_tox=None, state_max=None, patient_ctx=None):
     T, N, I, C = x[1], x[0], x[2], x[3]
     ct = C_TOX if c_tox is None else float(c_tox)
     smax = STATE_MAX if state_max is None else float(state_max)
-    return (T < T_CLEAR) or (N < 0.1) or (I < 0.1) or (C > ct) or (np.max(x) > smax)
+    return (
+        (T < T_CLEAR)
+        or (T > T_FATAL)
+        or (N < 0.1)
+        or (I < 0.1)
+        or (C > ct)
+        or (np.max(x) > smax)
+    )
 
 
 def cancer_ode(t, x, u, params):

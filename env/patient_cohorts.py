@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from env.chemo_env import DEFAULT_PARAMS, C_TOX, I_SAFE, N_SAFE
+from env.chemo_env import DEFAULT_PARAMS, C_TOX, I_SAFE, N_SAFE, T_FATAL
 
 COHORT_IDS = ("young_strong", "elderly_frail", "refractory_tumor")
 
@@ -22,6 +22,10 @@ _COHORT_SPECS: Dict[str, Dict[str, Any]] = {
         "label": "Cohort1 Young/Strong",
         "params_mult": {
             "s": 1.35,
+            "r1": 1.12,  # 肿瘤增殖略强
+            # 逻辑斯蒂容纳量 K≈1/b1：默认 b1=1 → K=1，无法超过 T_FATAL(1.5)。乘 0.5 → b1=0.5，K≈2，
+            # 肿瘤可长过 T_FATAL，低剂量才会 cancer_death（与 chemo_env.T_FATAL 配合）
+            "b1": 0.8,
             "a1": 0.88,
             "a2": 0.90,
             "d1": 0.92,
@@ -29,6 +33,7 @@ _COHORT_SPECS: Dict[str, Dict[str, Any]] = {
         "c_tox": C_TOX * 1.25,
         "i_safe": I_SAFE * 0.95,
         "n_safe": N_SAFE * 0.95,
+        "t_fatal": T_FATAL,
         "sde_sigma": 0.012,
     },
     "elderly_frail": {
@@ -42,6 +47,7 @@ _COHORT_SPECS: Dict[str, Dict[str, Any]] = {
         "c_tox": C_TOX * 0.88,
         "i_safe": I_SAFE * 1.15,
         "n_safe": max(0.26, N_SAFE * 1.35),
+        "t_fatal": T_FATAL,
         "sde_sigma": 0.02,
     },
     "refractory_tumor": {
@@ -55,6 +61,7 @@ _COHORT_SPECS: Dict[str, Dict[str, Any]] = {
         "c_tox": C_TOX,
         "i_safe": I_SAFE,
         "n_safe": N_SAFE,
+        "t_fatal": T_FATAL,
         "sde_sigma": 0.015,
     },
 }
@@ -82,7 +89,8 @@ class PatientGenerator:
     def from_cohort(self, cohort_id: str, jitter: float = 0.0) -> Dict[str, Any]:
         """返回 patient_ctx，可直接传给 collect_trajectory(..., patient_ctx=...)."""
         if cohort_id not in _COHORT_SPECS:
-            raise ValueError(f"Unknown cohort {cohort_id!r}; choose from {COHORT_IDS}")
+            raise ValueError(
+                f"Unknown cohort {cohort_id!r}; choose from {COHORT_IDS}")
         spec = _COHORT_SPECS[cohort_id]
         params = _merge_params(self.base_params, spec["params_mult"])
         if jitter > 0:
@@ -94,6 +102,7 @@ class PatientGenerator:
             "c_tox": float(spec["c_tox"]),
             "i_safe": float(spec["i_safe"]),
             "n_safe": float(spec["n_safe"]),
+            "t_fatal": float(spec.get("t_fatal", T_FATAL)),
             "sde_sigma": float(spec["sde_sigma"]),
         }
 
@@ -103,7 +112,8 @@ class PatientGenerator:
         jitter: float = 0.0,
     ) -> Dict[str, Any]:
         """按权重随机抽一个亚群。"""
-        w = weights if weights is not None else [1.0 / len(COHORT_IDS)] * len(COHORT_IDS)
+        w = weights if weights is not None else [
+            1.0 / len(COHORT_IDS)] * len(COHORT_IDS)
         w = np.asarray(w, dtype=np.float64)
         w = w / w.sum()
         cid = self.rng.choice(list(COHORT_IDS), p=w)

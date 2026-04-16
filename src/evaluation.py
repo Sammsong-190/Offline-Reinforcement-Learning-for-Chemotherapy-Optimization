@@ -15,7 +15,16 @@ from env.chemo_env import (
 )
 
 # 与 termination_info 对齐：这些原因视为「死亡」，survival_pct=0；timeout / cured 等为 100%
-_TERMINAL_DEATH = frozenset({"toxicity_death", "organ_failure", "immune_collapse", "state_explosion"})
+_TERMINAL_DEATH = frozenset(
+    {
+        "cancer_death",
+        "toxicity_death",
+        "organ_failure",
+        "immune_collapse",
+        "state_explosion",
+    }
+)
+TERMINAL_DEATH_REASONS = _TERMINAL_DEATH
 
 
 def _survival_pct(termination_reason: str) -> float:
@@ -91,7 +100,8 @@ class PyTorchAgent(Agent):
 
             def policy(s):
                 s_norm = normalize_state(s)
-                idx = net(torch.FloatTensor(s_norm).unsqueeze(0)).argmax(1).item()
+                idx = net(torch.FloatTensor(
+                    s_norm).unsqueeze(0)).argmax(1).item()
                 return float(ACTION_SPACE[idx])
             self._policy = policy
         else:
@@ -146,7 +156,8 @@ def _rollout_one(
         x = step_ode(x, a, DT, dyn_params, sde_sigma=sde_sigma, rng=rng)
         R += reward_fn_v3(x, DT, s_prev=x_prev)
         if ctx is not None:
-            violation_steps += int(transition_cost(x, ctx["i_safe"], ctx["n_safe"]))
+            violation_steps += int(transition_cost(x,
+                                   ctx["i_safe"], ctx["n_safe"]))
         else:
             violation_steps += int(transition_cost(x))
         done, reason = termination_info(x, ctx)
@@ -230,7 +241,8 @@ class Evaluator:
             "survival_time_mean": float(np.mean([x["survival_time"] for x in all_metrics])),
         }
         for r in reasons:
-            base[f"frac_{r}"] = float(np.mean([x["termination_reason"] == r for x in all_metrics]))
+            base[f"frac_{r}"] = float(
+                np.mean([x["termination_reason"] == r for x in all_metrics]))
         return base
 
     def evaluate_all(
@@ -279,7 +291,8 @@ class Evaluator:
                 if k not in fieldnames:
                     fieldnames.append(k)
         with open(path, "w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore", restval="")
+            w = csv.DictWriter(f, fieldnames=fieldnames,
+                               extrasaction="ignore", restval="")
             w.writeheader()
             w.writerows(rows)
         print(f"Saved {path}")

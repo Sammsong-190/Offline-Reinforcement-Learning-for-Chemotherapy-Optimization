@@ -16,6 +16,18 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 
+# termination_info 机器码 → 论文/临床可读死因（简要）
+_DEATH_LABEL = {
+    "cancer_death": "Cancer death (肿瘤致死)",
+    "toxicity_death": "Toxicity death (毒性致死)",
+    "organ_failure": "Organ failure",
+    "immune_collapse": "Immune collapse (I<0.1)",
+    "state_explosion": "ODE blow-up",
+    "cured": "Cured",
+    "timeout": "Censored (horizon)",
+}
+
+
 def _print_block(results: dict) -> None:
     for name, m in results.items():
         line = (
@@ -26,6 +38,16 @@ def _print_block(results: dict) -> None:
         if "survival_steps_mean" in m:
             line += f"  surv_steps={m['survival_steps_mean']:.1f}±{m['survival_steps_std']:.1f}"
         print(line)
+        # 死因占比（有 frac_* 时）
+        fracs = [(k, m[k]) for k in m if k.startswith("frac_") and m[k] > 0]
+        if fracs:
+            parts = []
+            for k, v in sorted(fracs, key=lambda x: -x[1])[:5]:
+                key = k.replace("frac_", "")
+                label = _DEATH_LABEL.get(key, key)
+                parts.append(f"{label}={v * 100:.0f}%")
+            if parts:
+                print(f"             " + "  ".join(parts))
 
 
 def main():
