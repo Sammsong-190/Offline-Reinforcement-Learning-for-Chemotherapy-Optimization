@@ -18,7 +18,7 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--d4rl", action="store_true", help="Also save D4RL format")
     parser.add_argument("--preset", choices=["default", "safe"], default="default",
-                        help="default: 50/30/10/10 mix, ~25%% cost; safe: 70/15/5/10, target 5-15%% cost")
+                        help="default: 行为混合; safe: 更偏 expert/conservative 的混合（压低激进轨迹）")
     parser.add_argument("--cohorts", action="store_true",
                         help="虚拟患者三类亚群 + SDE 步进（PatientGenerator），替代均匀参数噪声")
     args = parser.parse_args()
@@ -31,7 +31,7 @@ def main():
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     if args.preset == "safe":
-        # 更多 expert/conservative、极少 aggressive，expert 更少随机 → 目标 5%-15% 违规率
+        # 更多 expert/conservative、极少 aggressive
         kw = dict(
             expert_ratio=0.75, balanced_ratio=0.10, aggressive_ratio=0.02, conservative_ratio=0.13,
             expert_balance_ratio=0.20, expert_epsilon=0.12, patient_scale=0.08,

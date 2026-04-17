@@ -35,18 +35,15 @@ print()
 print("奖励: min={:.3f}  max={:.3f}  mean={:.3f}".format(
     d["r"].min(), d["r"].max(), d["r"].mean()))
 print()
-# Cost 分布 (SCI: 理想 5%-15% 违规，Safe RL 才能从错误中学习)
 if "c" in d.files:
     c = np.array(d["c"]).flatten()
     cost_rate = c.mean() * 100
     print("Cost 分布 (c=1 违规):")
-    print(f"  违规率: {cost_rate:.2f}%  (理想 5%-15%)")
+    print(f"  违规率: {cost_rate:.2f}%")
     if cost_rate < 1:
-        print("  [警告] c=1 过少，Safe RL 学不到危险")
+        print("  [提示] c=1 极少，Cost 负样本可能不足")
     elif cost_rate > 50:
-        print("  [警告] c=1 过多，任务可能过难")
-    else:
-        print("  [OK] 违规比例适中")
+        print("  [提示] c=1 比例高（虚拟多队列混合时常见，可为 Q_C 提供充足反面教材）")
 else:
     print("Cost: (无 c 列，需重新生成数据)")
 print("=" * 50)

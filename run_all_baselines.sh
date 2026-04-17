@@ -1,11 +1,11 @@
 #!/bin/bash
 # SCI 对比实验: BC | Standard CQL | Safe CQL
-# 数据: offline_dataset_v2.npz (Cost 违规率 ~9%)
+# 数据: offline_dataset_v2.npz
 set -e
 
 DATA="offline_dataset_v2.npz"
 if [ ! -f "$DATA" ]; then
-  echo "生成数据: $DATA (Cost 5%-15%)"
+  echo "生成数据: $DATA"
   python scripts/generate_data.py -o "$DATA" --preset safe
 fi
 python scripts/verify_dataset.py "$DATA"

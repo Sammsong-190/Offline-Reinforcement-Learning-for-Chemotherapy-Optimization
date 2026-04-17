@@ -25,7 +25,7 @@ def main():
         ok = False
     else:
         c = d["c"] if "c" in d else d["costs"]
-        print(f"[OK] Cost 违规率: {c.mean()*100:.2f}% (理想 5%-15%)")
+        print(f"[OK] Cost 违规率 (c=1 占比): {c.mean()*100:.2f}%")
     if "timeout" not in d.files and "timeouts" not in d.files:
         print("[FAIL] 缺少 timeout 列")
         ok = False

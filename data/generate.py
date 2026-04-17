@@ -229,10 +229,9 @@ def generate_dataset(
     for i, val in enumerate([0.0, 0.5, 1.0, 2.0]):
         pct = (a_idx == i).mean() * 100
         print(f"  Action {val}: {pct:.1f}%")
-    # Cost 分布 (SCI: 理想 5%-15%)
     c_arr = np.array([t.get("c", 0.0) for t in all_transitions])
     cost_rate = c_arr.mean() * 100
-    print(f"  Cost 违规率: {cost_rate:.2f}% (理想 5%-15%)")
+    print(f"  Cost 违规率 (c=1 占比): {cost_rate:.2f}%")
     if use_cohorts:
         cohorts = [t.get("cohort", "default") for t in all_transitions]
         uniq, cnt = np.unique(cohorts, return_counts=True)

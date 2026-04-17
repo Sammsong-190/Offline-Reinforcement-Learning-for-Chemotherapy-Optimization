@@ -21,6 +21,7 @@ d3rlpy_logs/
 # Experiment outputs
 experiments/results/
 experiments/figures/
+results/
 
 # IDE
 .idea/

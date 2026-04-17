@@ -22,10 +22,9 @@ _COHORT_SPECS: Dict[str, Dict[str, Any]] = {
         "label": "Cohort1 Young/Strong",
         "params_mult": {
             "s": 1.35,
-            "r1": 1.12,  # 肿瘤增殖略强
-            # 逻辑斯蒂容纳量 K≈1/b1：默认 b1=1 → K=1，无法超过 T_FATAL(1.5)。乘 0.5 → b1=0.5，K≈2，
-            # 肿瘤可长过 T_FATAL，低剂量才会 cancer_death（与 chemo_env.T_FATAL 配合）
-            "b1": 0.8,
+            "r1": 1.12,
+            # K≈1/b1：0.95 → 容纳量略高于 1，仍可超过 t_fatal；比 0.5/0.8 温和，避免 episode 过短、数据占比过低
+            "b1": 0.95,
             "a1": 0.88,
             "a2": 0.90,
             "d1": 0.92,
@@ -33,7 +32,9 @@ _COHORT_SPECS: Dict[str, Dict[str, Any]] = {
         "c_tox": C_TOX * 1.25,
         "i_safe": I_SAFE * 0.95,
         "n_safe": N_SAFE * 0.95,
-        "t_fatal": T_FATAL,
+        # 收紧肿瘤致死线（初始 T≈0.7）：过低剂量无法压瘤时易 cancer_death，KM 上 SafeCQL 呈阶梯下降而非贴顶 100%
+        # 若仍过乐观可再降至 0.95；略放宽可用 1.05
+        "t_fatal": 0.98,
         "sde_sigma": 0.012,
     },
     "elderly_frail": {
@@ -45,9 +46,9 @@ _COHORT_SPECS: Dict[str, Dict[str, Any]] = {
             "d1": 1.08,
         },
         "c_tox": C_TOX * 0.88,
-        "i_safe": I_SAFE * 1.15,
-        "n_safe": max(0.26, N_SAFE * 1.35),
-        "t_fatal": T_FATAL,
+        "i_safe": I_SAFE * 1.1,
+        "n_safe": N_SAFE * 1.1,
+        "t_fatal": 1.2,
         "sde_sigma": 0.02,
     },
     "refractory_tumor": {
