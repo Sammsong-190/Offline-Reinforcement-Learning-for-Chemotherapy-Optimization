@@ -18,7 +18,6 @@ POLICY_STYLE: dict[str, tuple[str, str]] = {
     "BC": ("#1565C0", "D"),
     "Expert": ("#EF6C00", "^"),
     "Random": ("#546E7A", "X"),
-    "IQL": ("#6A1B9A", "P"),
     "Fixed0.0": ("#00897B", "v"),
     "Fixed0.5": ("#43A047", "p"),
     "Fixed1.0": ("#F9A825", "h"),

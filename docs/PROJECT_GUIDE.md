@@ -350,7 +350,7 @@ $$
 
 - **训练**：100 患者（seed 42），每轨迹随机化参数
 - **测试**：100 新患者（seed 123），与训练集不重叠
-- **RL baseline**：CQL（d3rlpy DiscreteCQL）与 BC；离散动作下不设 IQL（d3rlpy 标准 IQL 为连续动作空间，与本环境不兼容）
+- **RL baseline**：CQL（d3rlpy DiscreteCQL）与 BC；离散动作空间
 
 ---
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 在同一离线数据集上训练 CQL / BC（离散动作；不写 IQL：d3rlpy 标准 IQL 仅支持连续动作空间）
+# 在同一离线数据集上训练 CQL / BC（离散动作）
 # 用法: bash scripts/train_baselines_v3.sh [offline_dataset_v3.npz]
 set -e
 cd "$(dirname "$0")/.."

@@ -51,7 +51,7 @@ python scripts/plot_results.py --no-rollout
 # 若尚无数据：生成（与论文一致时用 --cohorts）
 python scripts/generate_data.py -o offline_dataset_v3.npz --cohorts
 
-# 无约束 CQL、模仿 BC（离散动作；不含 IQL）
+# 无约束 CQL、模仿 BC
 python scripts/train.py --algo cql --data offline_dataset_v3.npz --seed 42
 python scripts/train.py --algo bc   --data offline_dataset_v3.npz --seed 42
 # 或: bash scripts/train_baselines_v3.sh offline_dataset_v3.npz
