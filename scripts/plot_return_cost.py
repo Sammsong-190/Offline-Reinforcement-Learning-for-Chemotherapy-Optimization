@@ -2,6 +2,10 @@
 """
 SCI 核心图: Return vs Constraint Violation Rate 散点图
 X: 违规率 (%) 越低越好  |  Y: Average Return 越高越好
+
+数据完全来自输入 CSV（默认 results/eval_results.csv）。若与当前 checkpoint 或
+亚群虚拟试验结果不一致，请先重新运行 evaluate.py 生成新 CSV，再出图。
+论文主文若仅用 cohort 级表格/KM/帕累托，可不再使用本散点图。
 """
 import argparse
 import csv
