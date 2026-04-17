@@ -10,7 +10,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from env.robust import set_seed
-from env.chemo_env import step_ode, reward_fn_v3, DEFAULT_PARAMS, DT, MAX_STEPS, X0, T_CLEAR, is_done
+from env.chemo_env import step_ode, reward_fn, DEFAULT_PARAMS, DT, MAX_STEPS, X0, T_CLEAR, is_done
 from env.patient import randomize_params
 
 set_seed(42)
@@ -37,7 +37,7 @@ def rollout_metrics(policy_fn, params, n_ep=5):
             actions.append(float(a))
             x = step_ode(x, a, DT, params)
             toxics.append(x[3])
-            R += reward_fn_v3(x, DT, s_prev=x_prev)
+            R += reward_fn(x, DT, s_prev=x_prev)
             if is_done(x):
                 break
         returns.append(R)
@@ -70,7 +70,7 @@ def toxicity_violation_rate(policy_fn, params, threshold=1.5, n_ep=20):
 
 
 def get_policies():
-    """Load BC, CQL, IQL, Expert policies"""
+    """Load BC, CQL, Expert policies"""
     from env.chemo_env import ACTION_SPACE, normalize_state
     from data.generate import expert_policy
 
@@ -83,7 +83,7 @@ def get_policies():
 
     if os.path.exists("bc_policy.pt"):
         import torch
-        from train_offline import PolicyNet
+        from src.bc_policy import PolicyNet
         net = PolicyNet()
         net.load_state_dict(torch.load("bc_policy.pt", map_location="cpu"))
         net.eval()
@@ -99,7 +99,6 @@ def get_policies():
 
     for name, path, key in [
         ("CQL", "cql_model.d3", "cql"),
-        ("IQL", "iql_model.d3", "iql"),
     ]:
         if os.path.exists(path):
             try:

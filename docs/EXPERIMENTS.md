@@ -40,7 +40,7 @@
 | Expert | x% |
 | BC | x% |
 | CQL | x% |
-| IQL | x% |
+| SafeCQL | x% |
 
 ---
 

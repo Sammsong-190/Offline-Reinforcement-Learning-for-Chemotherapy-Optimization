@@ -15,7 +15,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--dir", default="checkpoints")
     p.add_argument("--seed", type=int, default=42, help="与训练 --seed 一致")
-    p.add_argument("-o", "--output", default="results/lambda_dynamics.png")
+    p.add_argument("-o", "--output", default="figures/lambda_dynamics.png")
     args = p.parse_args()
 
     try:

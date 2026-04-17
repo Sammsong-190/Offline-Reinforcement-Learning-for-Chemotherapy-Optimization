@@ -31,7 +31,7 @@ def plot_robustness(exp2, out_path="experiments/figures/fig_robustness.pdf"):
     titles = ["Tumor Growth (r1) ±%", "Immune Strength (c1) ±%", "Drug Decay (d2) ±%"]
 
     fig, axes = plt.subplots(1, 3, figsize=(10, 4))
-    policies = ["Expert", "BC", "CQL", "IQL"]
+    policies = ["Expert", "BC", "CQL"]
 
     for ax, mode, title in zip(axes, modes, titles):
         if mode not in exp2:

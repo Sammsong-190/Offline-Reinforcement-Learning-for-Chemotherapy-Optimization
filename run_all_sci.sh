@@ -28,8 +28,8 @@ python scripts/evaluate_sensitivity.py -o results/sensitivity.csv
 
 echo ""
 echo "=== Step 3: 绘图 ==="
-python scripts/plot_lambda_dynamics.py -o results/lambda_dynamics.png
-python scripts/plot_pareto.py -i results/sensitivity.csv -o results/pareto_front.png
+python scripts/plot_lambda_dynamics.py -o figures/lambda_dynamics.png
+python scripts/plot_pareto.py -i results/sensitivity.csv -o figures/pareto_front.png
 
 echo ""
-echo "Done. 查看 results/lambda_dynamics.png (Figure A) 和 results/pareto_front.png (Figure B)"
+echo "Done. 查看 figures/lambda_dynamics.png (Figure A) 和 figures/pareto_front.png (Figure B)"

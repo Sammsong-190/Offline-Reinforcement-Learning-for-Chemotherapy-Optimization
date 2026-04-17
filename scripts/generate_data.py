@@ -41,7 +41,6 @@ def main():
 
     data = generate_dataset(
         n_trajectories=args.n,
-        use_reward_v3=True,
         state_noise_sigma=0.02,
         seed=args.seed,
         use_cohorts=args.cohorts,

@@ -5,7 +5,7 @@
 Usage:
   python scripts/plot_journal_figures.py \\
     --safe-cql-ckpt checkpoints/safe_cql_limit0.1_seed42.pt \\
-    -o results/figures \\
+    -o figures \\
     --n-ep 40 --seeds 42 123 456
 """
 from __future__ import annotations
@@ -154,7 +154,7 @@ def main() -> int:
     parser.add_argument(
         "-o",
         "--output-dir",
-        default="results/figures",
+        default="figures",
         help="输出目录",
     )
     parser.add_argument(

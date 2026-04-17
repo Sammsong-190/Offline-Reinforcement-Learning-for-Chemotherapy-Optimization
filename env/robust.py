@@ -26,7 +26,7 @@ def rollout_param_shift(policy_fn, n_patients=50, n_ep_per_patient=2, params_bas
     Robust evaluation: test policy on randomized patients.
     scale: 0.15 = in-distribution, 0.30 = OOD (out-of-distribution).
     """
-    from env.chemo_env import step_ode, reward_fn_v3, DT, MAX_STEPS, X0, termination_info
+    from env.chemo_env import step_ode, reward_fn, DT, MAX_STEPS, X0, termination_info
     from env.patient import randomize_params
 
     params_base = params_base or __import__("env.chemo_env", fromlist=["DEFAULT_PARAMS"]).DEFAULT_PARAMS
@@ -40,7 +40,7 @@ def rollout_param_shift(policy_fn, n_patients=50, n_ep_per_patient=2, params_bas
                 x_prev = x.copy()
                 a = policy_fn(x)
                 x = step_ode(x, a, DT, params)
-                R += reward_fn_v3(x, DT, s_prev=x_prev)
+                R += reward_fn(x, DT, s_prev=x_prev)
                 if termination_info(x, None)[0]:
                     break
             all_returns.append(R)
@@ -52,7 +52,7 @@ def rollout_virtual_cohorts(policy_fn, n_ep_per_cohort=20, cohort_ids=None, seed
     按虚拟患者亚群分别评估（用于「异质性」实验叙事）。
     cohort_ids: None 表示三类都跑。
     """
-    from env.chemo_env import step_ode, reward_fn_v3, DT, MAX_STEPS, X0, termination_info
+    from env.chemo_env import step_ode, reward_fn, DT, MAX_STEPS, X0, termination_info
     from env.patient_cohorts import PatientGenerator, COHORT_IDS
 
     rng = np.random.default_rng(seed)
@@ -71,7 +71,7 @@ def rollout_virtual_cohorts(policy_fn, n_ep_per_cohort=20, cohort_ids=None, seed
                 x_prev = x.copy()
                 a = policy_fn(x)
                 x = step_ode(x, a, DT, ctx["params"], sde_sigma=ctx.get("sde_sigma", 0.0), rng=rng)
-                R += reward_fn_v3(x, DT, s_prev=x_prev)
+                R += reward_fn(x, DT, s_prev=x_prev)
                 done, r = termination_info(x, ctx)
                 if done:
                     survival_steps = step + 1

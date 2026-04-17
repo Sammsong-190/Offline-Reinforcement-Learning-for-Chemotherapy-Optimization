@@ -28,7 +28,7 @@ def run_ablation_reward_weight():
 def run_ablation_dataset_size():
     """Dataset size: 10k, 25k, 50k, 100k transitions"""
     from data.generate import generate_dataset, save_dataset
-    from train_offline import train_bc, PolicyNet
+    from src.bc_policy import train_bc, PolicyNet
     from env.chemo_env import step_ode, reward_fn, is_done, DEFAULT_PARAMS, DT, MAX_STEPS, X0, T_CLEAR
     from env.chemo_env import ACTION_SPACE, normalize_state
 
@@ -36,7 +36,7 @@ def run_ablation_dataset_size():
     results = []
     for n_traj in sizes:
         set_seed(42)
-        data = generate_dataset(n_trajectories=n_traj, use_reward_v3=True, state_noise_sigma=0.02, expert_balance_ratio=0.6)
+        data = generate_dataset(n_trajectories=n_traj, state_noise_sigma=0.02, expert_balance_ratio=0.6)
         path = f"offline_dataset_n{n_traj}.npz"
         from data.generate import save_dataset
         save_dataset(data, path)

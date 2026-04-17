@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("-i", "--input", nargs="+", default=["results/sensitivity.csv", "results/eval_results.csv"])
-    p.add_argument("-o", "--output", default="results/pareto_front.png")
+    p.add_argument("-o", "--output", default="figures/pareto_front.png")
     p.add_argument("--title", default="Figure B: Safety-Performance Pareto Front")
     args = p.parse_args()
 

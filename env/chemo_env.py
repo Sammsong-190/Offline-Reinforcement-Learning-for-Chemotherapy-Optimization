@@ -1,12 +1,9 @@
 """
-Chemotherapy ODE environment (v3-only)
+Chemotherapy ODE environment
 Based on Padmanabhan et al. 2017, 4-dim system (N, T, I, C)
 
-This file:
-- keeps only reward v3 as default
-- implements transition_reward(prev, s, dt) with crossing-only bonuses
+- transition_reward(prev, s, dt) with crossing-only bonuses
 - clips per-step reward (REWARD_CLIP)
-- exposes DEFAULT_REWARD_VERSION='v3'
 """
 import numpy as np
 
@@ -30,6 +27,7 @@ I_THRESHOLD = 0.4
 T_CLEAR = 0.02  # tumor "cleared" for done/metric/bonus
 # 肿瘤负荷过高 → 癌症进展致死（避免「零剂量苟满 300 步」的 reward hacking）
 T_FATAL = 1.5  # 初始 T≈0.7；超过此阈值视为肿瘤相关死亡（可与队列 t_fatal 覆盖）
+# Default baseline thresholds. Dynamically overridden by patient_cohorts.py during multi-cohort simulations.
 C_TOX = 8.0    # toxicity limit: C > C_TOX -> terminate (safety constraint)
 STATE_MAX = 30.0  # ODE explosion guard: any state > STATE_MAX -> terminate
 
@@ -39,12 +37,9 @@ SDE_DEFAULT_SIGMA = 0.0
 # Reward clipping to avoid per-step extremes that destabilize offline RL
 REWARD_CLIP = (-100.0, 100.0)
 
-# Default reward version used in experiments / paper
-DEFAULT_REWARD_VERSION = 'v3'
-
 # Safe RL (CMDP): 二值 cost c ∈ {0, 1}
 # c=1: 违规 (Unsafe) | c=0: 安全 (Safe)
-# 阈值与 reward_fn 软惩罚区分: 此为硬约束（多队列混合数据下违规率可显著高于单环境；由 Q_C 学边界）
+# Default baseline thresholds; multi-cohort runs pass cohort-specific i_safe / n_safe via patient_ctx.
 I_SAFE = 0.2   # 免疫崩溃硬约束 (0.3→0.2 放松，与 is_done 0.1 保持梯度)
 N_SAFE = 0.2   # 器官衰竭硬约束 (0.4→0.2 放松)
 
@@ -196,7 +191,6 @@ def _sigmoid(x):
 
 def transition_reward(s_prev, s_curr, dt, debug=False):
     """Compute reward for transition (s_prev -> s_curr) with time step dt.
-    Implements v3 logic (only v3 present in this repo).
     Crossing-only bonuses and per-step clipping are enforced.
     Returns scalar reward (float) or (reward, info) if debug=True."""
     # Expect s_prev or s_curr as raw (denormalized) states: [N, T, I, C]
@@ -205,7 +199,6 @@ def transition_reward(s_prev, s_curr, dt, debug=False):
     prev_N = float(s_prev[0]) if s_prev is not None else N
     prev_I = float(s_prev[2]) if s_prev is not None else I
 
-    # v3: scaled, milestones only on first crossing of sub-thresholds
     r_tumor = -3.0 * T * dt
     r_tox = -1.5 * np.tanh(C / 2.0) * dt
     r_progress = 2.0 * (prev_T - T) * dt if s_prev is not None else 0.0
@@ -220,7 +213,6 @@ def transition_reward(s_prev, s_curr, dt, debug=False):
     r_collapse = -20.0 if (N < 0.1 or I < 0.05) and (prev_N >= 0.1 and prev_I >= 0.05) else 0.0
     r = r_tumor + r_tox + r_progress + R_clear + r_milestone + r_collapse
 
-    # Clip reward to avoid extremely large per-step values
     r_clipped = float(np.clip(r, REWARD_CLIP[0], REWARD_CLIP[1]))
 
     if debug:
@@ -228,17 +220,11 @@ def transition_reward(s_prev, s_curr, dt, debug=False):
             'N': N, 'T': T, 'I': I, 'C': C,
             'prev_T': prev_T, 'prev_N': prev_N, 'prev_I': prev_I,
             'reward_raw': float(r), 'reward_clipped': r_clipped,
-            'reward_version': 'v3'
         }
         return r_clipped, info
     return r_clipped
 
 
-# Backward compatibility: reward_fn(s, dt, s_prev) -> transition_reward(s_prev, s, dt)
 def reward_fn(s, dt, s_prev=None):
     """Compat wrapper: reward_fn(s, dt, s_prev) delegates to transition_reward."""
     return transition_reward(s_prev, s, dt)
-
-
-reward_fn_v2 = reward_fn
-reward_fn_v3 = reward_fn

@@ -57,7 +57,7 @@ def main():
         else:
             print("Generating data...")
             from data.generate import generate_dataset, save_dataset
-            data = generate_dataset(n_trajectories=1000, use_reward_v3=True,
+            data = generate_dataset(n_trajectories=1000,
                                     state_noise_sigma=0.02, expert_balance_ratio=0.6)
             save_dataset(data, data_path)
 
@@ -91,7 +91,7 @@ def main():
                    batch_size=p.get("batch_size", 256), save_path=save_path,
                    log_lambda_every=args.log_lambda)
     elif args.algo == "bc":
-        from train_offline import train_bc
+        from src.bc_policy import train_bc
         if user_save is not None:
             bc_path = user_save
         else:
@@ -99,7 +99,7 @@ def main():
             bc_path = sp.replace("safe_cql", "bc") if "safe_cql" in sp else "bc_policy.pt"
         train_bc(data_path=data_path, save_path=bc_path)
     elif args.algo == "cql":
-        from train_cql import train_cql
+        from src.cql_d3rlpy import train_cql
         train_cql(data_path=data_path, save_path=user_save or "cql_model.d3")
 
 

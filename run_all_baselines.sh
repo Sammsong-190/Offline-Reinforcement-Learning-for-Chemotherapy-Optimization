@@ -16,7 +16,7 @@ python scripts/train.py --algo bc --data "$DATA" --save bc_policy.pt
 
 echo ""
 echo "=== 2. Standard CQL (无视 Cost) ==="
-python train_cql.py --data "$DATA" --save cql_model.d3
+python scripts/train.py --algo cql --data "$DATA" --save cql_model.d3
 
 echo ""
 echo "=== 3. Safe CQL (Lagrangian) ==="
@@ -28,7 +28,7 @@ python scripts/evaluate.py --seeds 42 123 456 -o results/eval_results.csv
 
 echo ""
 echo "=== 5. 画 Return vs Cost 图 ==="
-python scripts/plot_return_cost.py -i results/eval_results.csv -o results/return_vs_cost.png
+python scripts/plot_return_cost.py -i results/eval_results.csv -o figures/return_vs_cost.png
 
 echo ""
-echo "Done. 查看 results/return_vs_cost.png"
+echo "Done. 查看 figures/return_vs_cost.png"

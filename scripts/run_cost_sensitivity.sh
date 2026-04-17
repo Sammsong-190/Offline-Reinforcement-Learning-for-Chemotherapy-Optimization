@@ -24,8 +24,8 @@ python scripts/evaluate_sensitivity.py -o results/sensitivity.csv
 
 echo ""
 echo "=== 3. 绘图 (Figure A & B) ==="
-python scripts/plot_lambda_dynamics.py -o results/lambda_dynamics.png
-python scripts/plot_pareto.py -i results/sensitivity.csv -o results/pareto_front.png
+python scripts/plot_lambda_dynamics.py -o figures/lambda_dynamics.png
+python scripts/plot_pareto.py -i results/sensitivity.csv -o figures/pareto_front.png
 
 echo ""
-echo "Done. 查看 results/lambda_dynamics.png 和 results/pareto_front.png"
+echo "Done. 查看 figures/lambda_dynamics.png 和 figures/pareto_front.png"

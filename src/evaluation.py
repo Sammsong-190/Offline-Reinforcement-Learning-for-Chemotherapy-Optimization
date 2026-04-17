@@ -9,7 +9,7 @@ from typing import Dict, Callable, Optional, List, Union
 from abc import ABC, abstractmethod
 
 from env.chemo_env import (
-    step_ode, reward_fn_v3, DEFAULT_PARAMS, MAX_STEPS, X0,
+    step_ode, reward_fn, DEFAULT_PARAMS, MAX_STEPS, X0,
     T_CLEAR, I_SAFE, N_SAFE, ACTION_SPACE, normalize_state,
     DT, termination_info, transition_cost,
 )
@@ -93,7 +93,7 @@ class PyTorchAgent(Agent):
             self._policy = algo.get_policy(path)
         elif agent_type == "bc":
             import torch
-            from train_offline import PolicyNet
+            from src.bc_policy import PolicyNet
             net = PolicyNet()
             net.load_state_dict(torch.load(path, map_location="cpu"))
             net.eval()
@@ -154,7 +154,7 @@ def _rollout_one(
         a = agent.get_action(x)
         actions.append(float(a))
         x = step_ode(x, a, DT, dyn_params, sde_sigma=sde_sigma, rng=rng)
-        R += reward_fn_v3(x, DT, s_prev=x_prev)
+        R += reward_fn(x, DT, s_prev=x_prev)
         if ctx is not None:
             violation_steps += int(transition_cost(x,
                                    ctx["i_safe"], ctx["n_safe"]))
@@ -312,11 +312,6 @@ def build_agents(root: Path) -> Dict[str, Agent]:
     if (root / "cql_model.d3").exists():
         try:
             agents["CQL"] = D3RLPyAgent(str(root / "cql_model.d3"))
-        except Exception:
-            pass
-    if (root / "iql_model.d3").exists():
-        try:
-            agents["IQL"] = D3RLPyAgent(str(root / "iql_model.d3"))
         except Exception:
             pass
     for dose in [0.0, 0.5, 1.0, 2.0]:

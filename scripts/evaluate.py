@@ -91,7 +91,12 @@ def main():
     if Path(ckpt).exists():
         agents["SafeCQL"] = PyTorchAgent(ckpt, "safe_cql")
     if args.policies:
-        agents = {k: v for k, v in agents.items() if k in args.policies}
+        missing = [p for p in args.policies if p not in agents]
+        if missing:
+            print(f"警告: 无对应 checkpoint，已跳过: {missing}")
+        agents = {p: agents[p] for p in args.policies if p in agents}
+        if not agents:
+            parser.error("没有可用的策略：请检查 checkpoint 与 --policies")
 
     evaluator = Evaluator()
 

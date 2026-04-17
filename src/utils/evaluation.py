@@ -1,9 +1,9 @@
 """评估脚本: 含安全指标计算"""
 import numpy as np
-from env.chemo_env import step_ode, reward_fn_v3, DEFAULT_PARAMS, MAX_STEPS, X0, is_done, T_CLEAR, I_SAFE, N_SAFE
+from env.chemo_env import step_ode, reward_fn, DEFAULT_PARAMS, MAX_STEPS, X0, is_done, T_CLEAR, I_SAFE, N_SAFE
 
 
-def evaluate_policy(policy_fn, n_ep=10, params=None, use_reward_v3=True):
+def evaluate_policy(policy_fn, n_ep=10, params=None):
     """Rollout policy, return mean_return, std_return, tumor_clear%, survival%, avg_dose, cost_rate%."""
     params = params or DEFAULT_PARAMS
     returns, tumor_clears, survivals, doses, cost_rates = [], [], [], [], []
@@ -15,7 +15,7 @@ def evaluate_policy(policy_fn, n_ep=10, params=None, use_reward_v3=True):
             a = policy_fn(x)
             actions.append(float(a))
             x = step_ode(x, a, 0.3, params)
-            R += reward_fn_v3(x, 0.3, s_prev=x_prev)
+            R += reward_fn(x, 0.3, s_prev=x_prev)
             if x[2] < I_SAFE or x[0] < N_SAFE:
                 cost_count += 1
             if is_done(x):

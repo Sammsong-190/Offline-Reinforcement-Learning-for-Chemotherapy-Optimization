@@ -170,7 +170,6 @@ def generate_dataset(
     balanced_ratio=0.30,
     aggressive_ratio=0.10,
     conservative_ratio=0.10,
-    use_reward_v3=True,
     randomize_patient=True,
     state_noise_sigma=0.02,
     expert_balance_ratio=0.6,
@@ -192,8 +191,7 @@ def generate_dataset(
     rng = np.random.RandomState(seed if seed is not None else 0)
     rng_sde = np.random.default_rng(seed if seed is not None else 0)
 
-    from env.chemo_env import reward_fn_v2, reward_fn_v3
-    reward_fn_impl = reward_fn_v3 if use_reward_v3 else reward_fn_v2
+    from env.chemo_env import reward_fn as reward_fn_impl
 
     traj_types = (
         ["expert"] * int(n_trajectories * expert_ratio)
