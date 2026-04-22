@@ -89,8 +89,13 @@ class PyTorchAgent(Agent):
         self.agent_type = agent_type
         if agent_type == "safe_cql":
             from src.algos.safe_cql import SafeCQL
-            algo = SafeCQL()
-            self._policy = algo.get_policy(path)
+            self._algo = SafeCQL()
+            self._policy = self._algo.get_policy(path)
+
+            def predict_qc(state, action_value: float):
+                return self._algo.predict_qc(state, action_value)
+
+            self.predict_qc = predict_qc
         elif agent_type == "bc":
             import torch
             from src.bc_policy import PolicyNet
@@ -145,6 +150,7 @@ def _rollout_one(
 
     x = np.array(X0, dtype=np.float32)
     R, actions, violation_steps = 0.0, [], 0
+    qc_preds = []
     tumor_start = float(X0[1])
     survival_steps = MAX_STEPS
     termination_reason = "timeout"
@@ -153,6 +159,11 @@ def _rollout_one(
         x_prev = x.copy()
         a = agent.get_action(x)
         actions.append(float(a))
+        if hasattr(agent, "predict_qc"):
+            try:
+                qc_preds.append(agent.predict_qc(x_prev, a))
+            except Exception:
+                qc_preds.append(float("nan"))
         x = step_ode(x, a, DT, dyn_params, sde_sigma=sde_sigma, rng=rng)
         R += reward_fn(x, DT, s_prev=x_prev)
         if ctx is not None:
@@ -170,17 +181,23 @@ def _rollout_one(
     drug_total = np.sum(actions) * DT if actions else 1e-8
     survival_time = float(survival_steps) * float(DT)
     cured = termination_reason == "cured"
-    return {
+    true_cost_rate = violation_steps / total_steps if total_steps else 0.0
+    out = {
         "return": R,
         "tumor_clear_pct": 100.0 if cured else 0.0,
         "survival_pct": _survival_pct(termination_reason),
         "avg_dose": np.mean(actions) if actions else 0.0,
-        "constraint_violation_rate_pct": violation_steps / total_steps * 100 if total_steps else 0.0,
+        "constraint_violation_rate_pct": true_cost_rate * 100.0,
+        "true_cost_rate": float(true_cost_rate),
         "treatment_efficiency": (tumor_start - x[1]) / drug_total if drug_total > 0 else 0.0,
         "survival_steps": int(survival_steps),
         "survival_time": survival_time,
         "termination_reason": termination_reason,
     }
+    if qc_preds:
+        out["mean_qc_predicted"] = float(np.nanmean(qc_preds))
+        out["max_qc_predicted"] = float(np.nanmax(qc_preds))
+    return out
 
 
 class Evaluator:
@@ -243,7 +260,35 @@ class Evaluator:
         for r in reasons:
             base[f"frac_{r}"] = float(
                 np.mean([x["termination_reason"] == r for x in all_metrics]))
+        if all_metrics and "mean_qc_predicted" in all_metrics[0]:
+            base["mean_qc_predicted"] = float(
+                np.nanmean([x.get("mean_qc_predicted", np.nan) for x in all_metrics]))
+            base["mean_qc_predicted_std"] = float(
+                np.nanstd([x.get("mean_qc_predicted", np.nan) for x in all_metrics]))
         return base
+
+    def episode_rollouts(
+        self,
+        agent: Agent,
+        n_episodes: int = 50,
+        base_seed: int = 42,
+        randomize_patient: bool = False,
+        patient_ctx: Optional[Union[Dict, Callable[[], Dict]]] = None,
+    ) -> List[dict]:
+        """逐条 episode 指标（用于 QC mismatch 小提琴图 / 散点）。"""
+        rows = []
+        for ep in range(n_episodes):
+            ep_seed = base_seed + ep * 1000
+            m = _rollout_one(
+                agent,
+                self.params,
+                seed=ep_seed,
+                randomize_patient=randomize_patient,
+                patient_ctx=patient_ctx,
+            )
+            m["episode"] = ep
+            rows.append(m)
+        return rows
 
     def evaluate_all(
         self,
@@ -284,6 +329,9 @@ class Evaluator:
             for k, v in m.items():
                 if k.startswith("frac_"):
                     row[k] = v
+            for k in ("mean_qc_predicted", "mean_qc_predicted_std"):
+                if k in m:
+                    row[k] = m[k]
             rows.append(row)
         fieldnames = list(rows[0].keys())
         for r in rows[1:]:

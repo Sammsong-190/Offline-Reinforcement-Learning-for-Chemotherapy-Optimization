@@ -1,31 +1,5 @@
 #!/bin/bash
-# SCI 灵敏度分析: 训练三组 cost_limit + 记录 lambda + 评估 + 绘图
+# 兼容入口：与 run_constraint_sweep.sh 相同的 5 点 ε 扫描（原 0.01/0.1/0.5 已弃用）
 set -e
-
-DATA="${1:-offline_dataset_v2.npz}"
-if [ ! -f "$DATA" ]; then
-  echo "生成数据: $DATA"
-  python scripts/generate_data.py -o "$DATA" --preset safe
-fi
-
-mkdir -p checkpoints results
-
-SEED="${SEED:-42}"
-echo "=== 1. 训练三组 Safe CQL (含 lambda 记录), seed=$SEED ==="
-for limit in 0.01 0.1 0.5; do
-  echo "--- cost_limit=$limit ---"
-  python scripts/train.py --algo safe_cql --data "$DATA" --cost-limit "$limit" \
-    --seed "$SEED" --log-lambda 1000
-done
-
-echo ""
-echo "=== 2. 评估 (生成 sensitivity.csv) ==="
-python scripts/evaluate_sensitivity.py -o results/sensitivity.csv
-
-echo ""
-echo "=== 3. 绘图 (Figure A & B) ==="
-python scripts/plot_lambda_dynamics.py -o figures/lambda_dynamics.png
-python scripts/plot_pareto.py -i results/sensitivity.csv -o figures/pareto_front.png
-
-echo ""
-echo "Done. 查看 figures/lambda_dynamics.png 和 figures/pareto_front.png"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+exec bash "$SCRIPT_DIR/run_constraint_sweep.sh" "$@"

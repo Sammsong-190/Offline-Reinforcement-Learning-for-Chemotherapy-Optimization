@@ -32,8 +32,6 @@ _COHORT_SPECS: Dict[str, Dict[str, Any]] = {
         "c_tox": C_TOX * 1.25,
         "i_safe": I_SAFE * 0.95,
         "n_safe": N_SAFE * 0.95,
-        # 收紧肿瘤致死线（初始 T≈0.7）：过低剂量无法压瘤时易 cancer_death，KM 上 SafeCQL 呈阶梯下降而非贴顶 100%
-        # 若仍过乐观可再降至 0.95；略放宽可用 1.05
         "t_fatal": 0.98,
         "sde_sigma": 0.012,
     },

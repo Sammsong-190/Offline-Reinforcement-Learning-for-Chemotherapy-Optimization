@@ -4,8 +4,24 @@ Based on Padmanabhan et al. 2017, 4-dim system (N, T, I, C)
 
 - transition_reward(prev, s, dt) with crossing-only bonuses
 - clips per-step reward (REWARD_CLIP)
+
+Reward profile (实验：奖励敏感性): 在生成数据或评估前设置环境变量
+  CHEMO_REWARD_PROFILE=high_incentive
+  会放大「彻底治愈」奖励并加重带瘤生存的肿瘤惩罚；默认不传或 default 则为原始标度。
 """
+import os
 import numpy as np
+
+
+def reward_profile() -> str:
+    """default | high_incentive — 由环境变量控制，便于数据生成脚本在 import 前设置。"""
+    return os.environ.get("CHEMO_REWARD_PROFILE", "default").strip().lower()
+
+
+def _reward_clip_range():
+    if reward_profile() == "high_incentive":
+        return (-200.0, 600.0)
+    return (-100.0, 100.0)
 
 # State scale for normalization (log-domain for N,T,I)
 X_SCALE = np.array([1.0, 1.0, 1.0, 3.0], dtype=np.float32)  # log1p(N,T,I), C
@@ -199,10 +215,17 @@ def transition_reward(s_prev, s_curr, dt, debug=False):
     prev_N = float(s_prev[0]) if s_prev is not None else N
     prev_I = float(s_prev[2]) if s_prev is not None else I
 
-    r_tumor = -3.0 * T * dt
+    prof = reward_profile()
+    if prof == "high_incentive":
+        # 附录实验「高诱惑」：清除奖励 ~10×，带瘤负荷惩罚加重（敏感性分析）
+        r_tumor = -10.0 * T * dt
+        R_clear_bonus = 500.0
+    else:
+        r_tumor = -3.0 * T * dt
+        R_clear_bonus = 50.0
     r_tox = -1.5 * np.tanh(C / 2.0) * dt
     r_progress = 2.0 * (prev_T - T) * dt if s_prev is not None else 0.0
-    R_clear = 50.0 if (prev_T >= T_CLEAR and T < T_CLEAR) else 0.0
+    R_clear = R_clear_bonus if (prev_T >= T_CLEAR and T < T_CLEAR) else 0.0
     r_milestone = 0.0
     if prev_T >= 0.5 and T < 0.5:
         r_milestone += 2.0 * dt
@@ -213,7 +236,8 @@ def transition_reward(s_prev, s_curr, dt, debug=False):
     r_collapse = -20.0 if (N < 0.1 or I < 0.05) and (prev_N >= 0.1 and prev_I >= 0.05) else 0.0
     r = r_tumor + r_tox + r_progress + R_clear + r_milestone + r_collapse
 
-    r_clipped = float(np.clip(r, REWARD_CLIP[0], REWARD_CLIP[1]))
+    lo, hi = _reward_clip_range()
+    r_clipped = float(np.clip(r, lo, hi))
 
     if debug:
         info = {

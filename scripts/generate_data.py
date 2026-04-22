@@ -2,8 +2,11 @@
 """
 统一数据生成入口
 Usage: python scripts/generate_data.py [--output data/raw/offline_dataset.npz] [--n 1000]
+
+奖励敏感性实验：生成前设置 CHEMO_REWARD_PROFILE=high_incentive（通过 --reward-profile）
 """
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -21,7 +24,18 @@ def main():
                         help="default: 行为混合; safe: 更偏 expert/conservative 的混合（压低激进轨迹）")
     parser.add_argument("--cohorts", action="store_true",
                         help="虚拟患者三类亚群 + SDE 步进（PatientGenerator），替代均匀参数噪声")
+    parser.add_argument(
+        "--reward-profile",
+        choices=["default", "high_incentive"],
+        default="default",
+        help="high_incentive: 附录奖励敏感性 — 放大治愈奖励与带瘤惩罚，需与评估时 profile 一致",
+    )
     args = parser.parse_args()
+
+    if args.reward_profile == "high_incentive":
+        os.environ["CHEMO_REWARD_PROFILE"] = "high_incentive"
+    else:
+        os.environ.pop("CHEMO_REWARD_PROFILE", None)
 
     from env.robust import set_seed
     from data.generate import generate_dataset, save_dataset, save_dataset_d4rl
@@ -31,7 +45,6 @@ def main():
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     if args.preset == "safe":
-        # 更多 expert/conservative、极少 aggressive
         kw = dict(
             expert_ratio=0.75, balanced_ratio=0.10, aggressive_ratio=0.02, conservative_ratio=0.13,
             expert_balance_ratio=0.20, expert_epsilon=0.12, patient_scale=0.08,
@@ -50,7 +63,7 @@ def main():
     if args.d4rl:
         d4rl_path = str(out_path).replace(".npz", "_d4rl.npz")
         save_dataset_d4rl(data, d4rl_path)
-    print(f"Done. Saved to {out_path}")
+    print(f"Done. Saved to {out_path}  (CHEMO_REWARD_PROFILE={os.environ.get('CHEMO_REWARD_PROFILE', 'default')})")
 
 
 if __name__ == "__main__":

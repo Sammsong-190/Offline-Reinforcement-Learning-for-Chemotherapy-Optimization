@@ -7,6 +7,7 @@ SCI 格式: Return, Constraint Violation Rate, Survival Rate
 """
 import argparse
 import csv
+import os
 import sys
 from pathlib import Path
 
@@ -54,6 +55,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--policies", nargs="+", default=None,
                         help="e.g. Expert BC SafeCQL CQL. Default: all available")
+    parser.add_argument(
+        "--ckpt",
+        action="append",
+        default=[],
+        metavar="NAME=PATH",
+        help="额外策略: NAME=path，.d3 走 CQL(D3RLPy)，.pt 默认 safe_cql（名称含 bc 则为 bc）",
+    )
     parser.add_argument("--n_ep", type=int, default=20)
     parser.add_argument("--seeds", nargs="+", type=int, default=[42, 123, 456],
                         help="Multi-seed for SCI (单一种子不被认可)")
@@ -77,16 +85,40 @@ def main():
     )
     parser.add_argument("--output", "-o", default="results/eval_results.csv")
     parser.add_argument("--no-csv", action="store_true")
+    parser.add_argument(
+        "--reward-profile",
+        choices=["default", "high_incentive"],
+        default="default",
+        help="与数据生成一致；high_incentive 时回报尺度与附录奖励敏感性实验一致",
+    )
     args = parser.parse_args()
 
     if args.cohort and args.cohort_id:
         parser.error("请只使用 --cohort 或 --cohort-id 之一")
 
+    if args.reward_profile == "high_incentive":
+        os.environ["CHEMO_REWARD_PROFILE"] = "high_incentive"
+    else:
+        os.environ.pop("CHEMO_REWARD_PROFILE", None)
+
     from env.patient_cohorts import COHORT_IDS, PatientGenerator
     from src.evaluation import Evaluator, build_agents
-    from src.evaluation import PyTorchAgent
+    from src.evaluation import D3RLPyAgent, PyTorchAgent
 
     agents = build_agents(ROOT)
+    for spec in args.ckpt:
+        if "=" not in spec:
+            parser.error(f"--ckpt 需为 NAME=PATH，收到: {spec}")
+        name, path = spec.split("=", 1)
+        path = str(ROOT / path) if not Path(path).is_absolute() else path
+        if not Path(path).exists():
+            print(f"警告: --ckpt 跳过（文件不存在）{path}")
+            continue
+        if path.endswith(".d3"):
+            agents[name] = D3RLPyAgent(path)
+        else:
+            algo = "bc" if "bc" in name.lower() else "safe_cql"
+            agents[name] = PyTorchAgent(path, algo)
     ckpt = args.safe_cql_ckpt or str(ROOT / "checkpoints" / "safe_cql_limit0.1_seed42.pt")
     if Path(ckpt).exists():
         agents["SafeCQL"] = PyTorchAgent(ckpt, "safe_cql")

@@ -217,12 +217,37 @@ class SafeCQL(BaseAlgo):
             print(f"Saved lambda history: {log_path.resolve()}")
         return self.actor
 
+    def _action_to_idx(self, action_value: float) -> int:
+        a = float(action_value)
+        for i, v in enumerate(self.action_values):
+            if abs(v - a) < 1e-5:
+                return i
+        raise ValueError(f"action {action_value} not in {self.action_values}")
+
+    def predict_qc(self, state_raw, action_value: float) -> float:
+        """当前状态下对所选动作的 Cost critic 均值 Q_C(s,a)（用于与真实二值 cost 对比）。"""
+        from env.chemo_env import normalize_state
+
+        idx = self._action_to_idx(action_value)
+        s = np.array(state_raw, dtype=np.float32)
+        s_norm = normalize_state(s)
+        if s_norm.ndim == 1:
+            s_norm = s_norm.reshape(1, -1)
+        x = torch.FloatTensor(s_norm).to(self.device)
+        with torch.no_grad():
+            qcs = [net(x)[0, idx].item() for net in self.q_c_nets]
+        return float(np.mean(qcs))
+
     def get_policy(self, path=None):
         """Return policy function s (raw) -> a for rollout."""
         if path:
             ckpt = torch.load(path, map_location="cpu")
             self.actor.load_state_dict(ckpt["actor"])
+            if "q_c" in ckpt:
+                self.q_c_nets[0].load_state_dict(ckpt["q_c"])
         self.actor.eval()
+        for net in self.q_c_nets:
+            net.eval()
 
         from env.chemo_env import normalize_state
 

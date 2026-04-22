@@ -2,13 +2,22 @@
 """
 SCI Figure B: Safety-Performance Pareto Front
 X: Constraint Violation Rate (%)  |  Y: Average Return
+将 SafeCQL_ε=* 点按 ε 升序连成折线（机制旋钮）；CQL/BC 等为孤立散点。
 """
 import argparse
 import csv
+import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+EPS_RE = re.compile(r"SafeCQL_ε=([0-9.]+(?:e[+-]?[0-9]+)?)", re.I)
+
+
+def _parse_eps(name: str):
+    m = EPS_RE.search(name)
+    return float(m.group(1)) if m else None
 
 
 def main():
@@ -47,25 +56,48 @@ def main():
             seen.add(r["policy"])
             unique.append(r)
 
-    policies = [r["policy"] for r in unique]
-    returns = [float(r["return_mean"]) for r in unique]
-    return_stds = [float(r.get("return_std", 0)) for r in unique]
-    costs = [float(r["constraint_violation_rate_pct"]) for r in unique]
+    def is_safecql_sweep(name: str) -> bool:
+        return _parse_eps(name) is not None
+
+    sweep_pts = [(r["policy"], r) for r in unique if is_safecql_sweep(r["policy"])]
+    sweep_pts.sort(key=lambda x: _parse_eps(x[0]))
+    other = [r for r in unique if not is_safecql_sweep(r["policy"])]
 
     fig, ax = plt.subplots(figsize=(8, 6))
-    colors = {"SafeCQL_ε=0.01": "darkgreen", "SafeCQL_ε=0.1": "green", "SafeCQL_ε=0.5": "lightgreen",
-              "SafeCQL": "green", "CQL": "red", "BC": "blue", "Expert": "orange", "Random": "gray"}
-    for i, name in enumerate(policies):
+
+    colors = {
+        "SafeCQL_ε=0.01": "darkgreen", "SafeCQL_ε=0.1": "green", "SafeCQL_ε=0.5": "lightgreen",
+        "SafeCQL": "green", "CQL": "red", "BC": "blue", "Expert": "orange", "Random": "gray",
+    }
+
+    if sweep_pts:
+        xs = [float(r["constraint_violation_rate_pct"]) for _, r in sweep_pts]
+        ys = [float(r["return_mean"]) for _, r in sweep_pts]
+        yerr = [float(r.get("return_std") or 0) for _, r in sweep_pts]
+        ax.errorbar(xs, ys, yerr=yerr, fmt="-o", color="darkgreen", capsize=3,
+                    markersize=8, linewidth=2, label="SafeCQL (ε sweep)")
+        for name, r in sweep_pts:
+            c = colors.get(name, "darkgreen")
+            x = float(r["constraint_violation_rate_pct"])
+            y = float(r["return_mean"])
+            ax.annotate(name, (x, y), xytext=(5, 4), textcoords="offset points", fontsize=8)
+
+    for r in other:
+        name = r["policy"]
         c = colors.get(name, "black")
-        ax.errorbar(costs[i], returns[i], yerr=return_stds[i] if return_stds[i] else None,
-                    fmt="o", capsize=3, color=c, markersize=10)
-        ax.annotate(name, (costs[i], returns[i]), xytext=(6, 6), textcoords="offset points", fontsize=9)
+        x = float(r["constraint_violation_rate_pct"])
+        y = float(r["return_mean"])
+        ye = float(r.get("return_std") or 0)
+        ax.errorbar(x, y, yerr=ye if ye else None, fmt="s", capsize=3, color=c, markersize=9)
+        ax.annotate(name, (x, y), xytext=(6, 6), textcoords="offset points", fontsize=9)
 
     ax.set_xlabel("Constraint Violation Rate (%)", fontsize=12)
     ax.set_ylabel("Average Return", fontsize=12)
     ax.set_title(args.title)
     ax.grid(True, alpha=0.3)
     ax.axhline(y=0, color="k", linestyle="--", alpha=0.3)
+    if sweep_pts:
+        ax.legend(loc="best")
     fig.tight_layout()
 
     out = ROOT / args.output
