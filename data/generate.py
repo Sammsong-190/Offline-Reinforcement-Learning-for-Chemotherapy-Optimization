@@ -6,6 +6,7 @@ Paper: Supervised Optimal Chemotherapy Regimen Based on Offline Reinforcement Le
 import numpy as np
 from env.chemo_env import (
     step_ode, DEFAULT_PARAMS, normalize_state, is_done,
+    termination_info,
     DT, MAX_STEPS, X0, ACTION_SPACE, ACTION_TO_IDX, T_CLEAR,
 )
 from env.patient import randomize_params
@@ -123,7 +124,10 @@ def collect_trajectory(policy, params=None, x0=None, randomize_patient=False, re
         c_tox = n_safe = i_safe = None
         sde_sigma = 0.0
         cohort_name = "default"
-    x = np.array(x0 or X0, dtype=np.float32)
+    if x0 is None:
+        x = np.array(X0, dtype=np.float32)
+    else:
+        x = np.array(x0, dtype=np.float32)
     transitions = []
     for step in range(MAX_STEPS):
         s = x.copy()
@@ -133,7 +137,10 @@ def collect_trajectory(policy, params=None, x0=None, randomize_patient=False, re
         except TypeError:
             a = discretize_action(policy(s_for_policy, epsilon=0.2))
         x_next = step_ode(x, a, DT, params, sde_sigma=sde_sigma, rng=rng)
-        done = _is_done(x_next, c_tox=c_tox)
+        if patient_ctx is not None:
+            done, _reason = termination_info(x_next, patient_ctx)
+        else:
+            done = _is_done(x_next, c_tox=c_tox)
         timeout = (step == MAX_STEPS - 1) and not done  # hit max steps
         r = reward_fn(x_next, DT, s_prev=x)
         from env.chemo_env import transition_cost
