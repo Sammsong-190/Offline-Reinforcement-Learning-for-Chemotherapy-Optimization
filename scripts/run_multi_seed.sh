@@ -4,7 +4,7 @@ set -e
 cd "$(dirname "$0")/.."
 
 COST_LIMIT="${COST_LIMIT:-0.1}"
-SEEDS="${SEEDS:-42 123 456 789 1024}"
+SEEDS="${SEEDS:-15 500 1200 1800 2500 3200 3900 4600 5300 6000 6700 7400 8100 8800 9500 10200 10900 11600 12300 13000 13700 14400 15000}"
 DATA="${DATA:-data/raw/offline_dataset_v3.npz}"
 
 mkdir -p checkpoints

@@ -1,9 +1,5 @@
 #!/bin/bash
-# 续跑实验 A：根据上次进度，只训尚未完成的 (seed × ε)。
-# 当前逻辑（与终端日志一致）：
-#   - seed 42：五档已齐
-#   - seed 123：0.3 中断需重训，补 0.5、1.0
-#   - seed 999, 2024, 0：各跑全套五档
+# 通用 23 seeds × cost limits；可续跑时用 SKIP_EXISTING=1 跳过已有 checkpoint。
 #
 # 用法: bash scripts/run_multi_seed_remaining.sh [data.npz]
 # 若某 checkpoint 已存在可跳过: SKIP_EXISTING=1 bash scripts/run_multi_seed_remaining.sh
@@ -32,14 +28,11 @@ run_one() {
     --seed "$SEED" --log-lambda 1000
 }
 
-# seed 123：0.3 被 Ctrl+C 打断未保存，需重跑；再 0.5、1.0
-for LIMIT in 0.3 0.5 1.0; do
-  run_one "$LIMIT" 123
-done
+SEEDS="${SEEDS:-15 500 1200 1800 2500 3200 3900 4600 5300 6000 6700 7400 8100 8800 9500 10200 10900 11600 12300 13000 13700 14400 15000}"
+LIMITS="${LIMITS:-0.0 0.1 0.3 0.5 1.0}"
 
-# 其余 seed 全套
-for SEED in 999 2024 0; do
-  for LIMIT in 0.0 0.1 0.3 0.5 1.0; do
+for SEED in $SEEDS; do
+  for LIMIT in $LIMITS; do
     run_one "$LIMIT" "$SEED"
   done
 done
