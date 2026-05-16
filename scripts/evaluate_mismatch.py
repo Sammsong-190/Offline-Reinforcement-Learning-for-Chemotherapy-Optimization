@@ -7,19 +7,32 @@ import csv
 import sys
 from pathlib import Path
 
+import numpy as np
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--checkpoint", required=True, help="SafeCQL .pt")
+    ap.add_argument("--checkpoint", required=True, help="SafeCQL .pt（须含 q_c）")
     ap.add_argument("-o", "--output", default="results/qc_mismatch_episodes.csv")
     ap.add_argument("--n-ep", type=int, default=100)
     ap.add_argument("--base-seed", type=int, default=42)
+    ap.add_argument(
+        "--cohort-id",
+        default=None,
+        metavar="ID",
+        help="young_strong | elderly_frail | refractory_tumor；缺省为 default 动力学",
+    )
     args = ap.parse_args()
 
     from src.evaluation import Evaluator, PyTorchAgent
+    from env.patient_cohorts import COHORT_IDS, PatientGenerator
+
+    if args.cohort_id is not None and args.cohort_id not in COHORT_IDS:
+        print(f"未知 cohort: {args.cohort_id}，可选: {COHORT_IDS}", file=sys.stderr)
+        return 1
 
     ckpt = Path(args.checkpoint)
     if not ckpt.is_absolute():
@@ -30,11 +43,21 @@ def main():
 
     agent = PyTorchAgent(str(ckpt), "safe_cql")
     ev = Evaluator()
-    rows = ev.episode_rollouts(agent, n_episodes=args.n_ep, base_seed=args.base_seed)
+    patient_ctx = None
+    if args.cohort_id is not None:
+        gen = PatientGenerator(rng=np.random.default_rng(42))
+        patient_ctx = gen.from_cohort(args.cohort_id, jitter=0.0)
+    rows = ev.episode_rollouts(
+        agent,
+        n_episodes=args.n_ep,
+        base_seed=args.base_seed,
+        patient_ctx=patient_ctx,
+    )
 
     out = []
     for m in rows:
         out.append({
+            "cohort": args.cohort_id or "default",
             "episode": m["episode"],
             "return": m["return"],
             "mean_qc_predicted": m.get("mean_qc_predicted", ""),
