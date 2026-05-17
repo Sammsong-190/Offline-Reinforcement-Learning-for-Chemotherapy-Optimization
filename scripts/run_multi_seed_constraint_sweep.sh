@@ -1,11 +1,19 @@
 #!/bin/bash
 # 实验 A：多 seed × ε 训练（checkpoint 互不覆盖：safe_cql_limit{ε}_seed{seed}.pt）
+#
+# 数据路径：优先环境变量 DATA，否则第一个参数，否则默认 NPZ。
+# 可选 AGENT_CONFIG（如 configs/agent/safe_cql_debug.yaml）传给 train.py。
 set -e
 cd "$(dirname "$0")/.."
 
-DATA="${1:-data/raw/offline_dataset_v3.npz}"
+DATA="${DATA:-${1:-data/raw/offline_dataset_v3.npz}}"
 SEEDS="${SEEDS:-15 500 1200 1800 2500 3200 3900 4600 5300 6000 6700 7400 8100 8800 9500 10200 10900 11600 12300 13000 13700 14400 15000}"
 LIMITS="${LIMITS:-0.0 0.1 0.3 0.5 1.0}"
+
+AGENT_ARGS=()
+if [ -n "${AGENT_CONFIG:-}" ]; then
+  AGENT_ARGS=(--agent-config "$AGENT_CONFIG")
+fi
 
 if [ ! -f "$DATA" ]; then
   echo "缺少数据: $DATA"
@@ -13,13 +21,13 @@ if [ ! -f "$DATA" ]; then
 fi
 
 mkdir -p checkpoints results
-echo "data=$DATA  SEEDS=$SEEDS  LIMITS=$LIMITS"
+echo "data=$DATA  SEEDS=$SEEDS  LIMITS=$LIMITS  AGENT_CONFIG=${AGENT_CONFIG:-<default configs/agent/safe_cql.yaml>}"
 
 for SEED in $SEEDS; do
   for LIMIT in $LIMITS; do
     echo "=== train ε=$LIMIT seed=$SEED ==="
     python scripts/train.py --algo safe_cql --data "$DATA" --cost-limit "$LIMIT" \
-      --seed "$SEED" --log-lambda 1000
+      --seed "$SEED" --log-lambda 1000 "${AGENT_ARGS[@]}"
   done
 done
 

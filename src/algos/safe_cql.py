@@ -70,27 +70,32 @@ class SafeCQL(BaseAlgo):
         self.opt_actor = torch.optim.Adam(self.actor.parameters(), lr=actor_lr)
         self.opt_lambda = torch.optim.Adam([self.log_lambda], lr=lagrangian_lr)
 
-    def update(self, ss, aa, rr, cc, ss_next, term_b):
+    def update(self, ss, aa, rr, cc, ss_next, term_b, return_metrics: bool = False):
         """
         单步更新。对应论文中的 Lagrangian Loss:
         L = L_CQL(Q_R) + L_TD(Q_C) + L_CQL-cost(Q_C) + L_λ(λ) + L_π(π)
+
+        return_metrics=False 时不做 .item()/同步，训练环里只在 log 步为 True。
         """
         aa_onehot = F.one_hot(aa, self.n_actions).float()
+        k = self.n_critics
+        aa_idx_b = aa.unsqueeze(0).unsqueeze(-1).expand(k, -1, 1)
 
-        # --- 1. Reward Q (CQL conservative) ---
-        q_r = sum(net(ss).gather(1, aa.unsqueeze(1)).squeeze(1)
-                  for net in self.q_r_nets) / self.n_critics
+        # --- 1. Reward Q (CQL conservative)；本段内只前向 q_r_nets(ss) 一次 ---
+        q_r_all = torch.stack([net(ss) for net in self.q_r_nets], dim=0)
+        q_r = q_r_all.gather(2, aa_idx_b).squeeze(-1).mean(0)
         with torch.no_grad():
             next_a = self.actor(ss_next).argmax(-1)
-            q_next = torch.min(torch.stack([t(ss_next).gather(
-                1, next_a.unsqueeze(1)).squeeze(1) for t in self.q_r_targets]), dim=0)[0]
+            tgt_r = torch.stack([t(ss_next) for t in self.q_r_targets], dim=0)
+            na_r = next_a.unsqueeze(0).unsqueeze(-1).expand(k, -1, 1)
+            q_next = torch.min(
+                tgt_r.gather(2, na_r).squeeze(-1), dim=0)[0]
             td_target = rr.squeeze() + self.gamma * (1 - term_b.squeeze()) * q_next
             td_target = td_target.clamp(-50.0, 50.0)  # 防止 bootstrap 爆炸
         td_loss = F.mse_loss(q_r, td_target)
-        log_sum_exp_q = torch.logsumexp(torch.stack(
-            [net(ss) for net in self.q_r_nets], dim=0).mean(0), dim=-1)
-        q_data = (torch.stack([net(ss) for net in self.q_r_nets], dim=0).mean(
-            0) * aa_onehot).sum(-1)
+        q_r_mean = q_r_all.mean(0)
+        log_sum_exp_q = torch.logsumexp(q_r_mean, dim=-1)
+        q_data = (q_r_mean * aa_onehot).sum(-1)
         cql_penalty = (log_sum_exp_q - q_data).mean()
         q_r_loss = td_loss + self.alpha_cql * cql_penalty
         self.opt_qr.zero_grad()
@@ -99,20 +104,21 @@ class SafeCQL(BaseAlgo):
             [p for net in self.q_r_nets for p in net.parameters()], 10.0)
         self.opt_qr.step()
 
-        # --- 2. Cost Q (Double-Conservative: TD 用 max 悲观 bootstrap + CQL 推高 OOD 的 Q_C) ---
-        q_c = sum(net(ss).gather(1, aa.unsqueeze(1)).squeeze(1)
-                  for net in self.q_c_nets) / self.n_critics
+        # --- 2. Cost Q；本段内只前向 q_c_nets(ss) 一次 ---
+        q_c_all = torch.stack([net(ss) for net in self.q_c_nets], dim=0)
+        q_c = q_c_all.gather(2, aa_idx_b).squeeze(-1).mean(0)
         with torch.no_grad():
             next_a = self.actor(ss_next).argmax(-1)
-            q_c_next = torch.max(torch.stack([t(ss_next).gather(
-                1, next_a.unsqueeze(1)).squeeze(1) for t in self.q_c_targets]), dim=0)[0]
+            tgt_c = torch.stack([t(ss_next) for t in self.q_c_targets], dim=0)
+            na_c = next_a.unsqueeze(0).unsqueeze(-1).expand(k, -1, 1)
+            q_c_next = torch.max(
+                tgt_c.gather(2, na_c).squeeze(-1), dim=0)[0]
             c_td_target = cc.squeeze() + self.gamma * (1 - term_b.squeeze()) * q_c_next
             c_td_target = c_td_target.clamp(0.0, 10.0)
         mse_c_loss = F.mse_loss(q_c, c_td_target)
-        log_sum_exp_qc = torch.logsumexp(torch.stack(
-            [net(ss) for net in self.q_c_nets], dim=0).mean(0), dim=-1)
-        qc_data = (torch.stack([net(ss) for net in self.q_c_nets], dim=0).mean(
-            0) * aa_onehot).sum(-1)
+        q_c_mean = q_c_all.mean(0)
+        log_sum_exp_qc = torch.logsumexp(q_c_mean, dim=-1)
+        qc_data = (q_c_mean * aa_onehot).sum(-1)
         cost_cql_penalty = (log_sum_exp_qc - qc_data).mean()
         alpha_cost = self.alpha_cql
         q_c_loss = mse_c_loss + alpha_cost * cost_cql_penalty
@@ -123,6 +129,7 @@ class SafeCQL(BaseAlgo):
         self.opt_qc.step()
 
         # --- 3. Lagrange: min_λ λ·(J_C - ε)，clip 防止 λ 爆炸 ---
+        # critic 已 step，需对 Q_C 再前向一次
         with torch.no_grad():
             pi_probs = self.actor(ss)
             q_c_pi = torch.stack([net(ss)
@@ -158,14 +165,17 @@ class SafeCQL(BaseAlgo):
                 for p_t, p in zip(self.q_c_targets[i].parameters(), self.q_c_nets[i].parameters()):
                     p_t.data.mul_(1 - self.tau).add_(p.data, alpha=self.tau)
 
+        if not return_metrics:
+            return None
+        lam = torch.exp(self.log_lambda).clamp(0.01, 10.0)
         return {
-            "q_r_loss": q_r_loss.item(),
-            "q_c_loss": q_c_loss.item(),
-            "q_c_mse": mse_c_loss.item(),
-            "cql_cost_penalty": cost_cql_penalty.item(),
-            "actor_loss": actor_loss.item(),
-            "lambda": torch.exp(self.log_lambda).item(),
-            "current_risk": current_risk.item(),  # E[Q_C] under π，真实 Cost 预估值
+            "q_r_loss": float(q_r_loss.detach().cpu()),
+            "q_c_loss": float(q_c_loss.detach().cpu()),
+            "q_c_mse": float(mse_c_loss.detach().cpu()),
+            "cql_cost_penalty": float(cost_cql_penalty.detach().cpu()),
+            "actor_loss": float(actor_loss.detach().cpu()),
+            "lambda": float(lam.detach().cpu()),
+            "current_risk": float(current_risk.detach().cpu()),
         }
 
     def train(self, data_path: str, n_steps=200000, batch_size=256, save_path="safe_cql_model.pt", log_lambda_every=0):
@@ -185,13 +195,18 @@ class SafeCQL(BaseAlgo):
         lambda_history = [] if log_lambda_every > 0 else None
 
         def sample():
-            idx = np.random.choice(n, size=batch_size, replace=True)
+            idx = torch.randint(
+                0, n, (batch_size,), device=self.device, dtype=torch.long)
             return s_t[idx], a_t[idx], r_t[idx], c_t[idx], s_next_t[idx], term[idx]
 
         for step in range(n_steps):
             batch = sample()
-            losses = self.update(*batch)
-            if lambda_history is not None and (step + 1) % log_lambda_every == 0:
+            need_log = lambda_history is not None and log_lambda_every > 0 and (
+                (step + 1) % log_lambda_every == 0)
+            need_print = (step + 1) % 10000 == 0
+            losses = self.update(
+                *batch, return_metrics=need_log or need_print)
+            if need_log:
                 lambda_history.append({
                     "step": step + 1, "lambda": losses["lambda"],
                     "current_risk": losses.get("current_risk", 0),
@@ -199,7 +214,7 @@ class SafeCQL(BaseAlgo):
                     "q_c_mse": losses.get("q_c_mse", 0),
                     "cql_cost_penalty": losses.get("cql_cost_penalty", 0),
                 })
-            if (step + 1) % 10000 == 0:
+            if need_print:
                 risk = losses.get("current_risk", 0)
                 print(f"  step {step+1}: λ={losses['lambda']:.2f} Q_C(π)={risk:.4f} (limit={self.cost_limit}) "
                       f"qr_loss={losses['q_r_loss']:.4f} qc_loss={losses['q_c_loss']:.4f} "

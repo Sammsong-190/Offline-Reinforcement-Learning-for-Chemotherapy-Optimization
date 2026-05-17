@@ -1,15 +1,16 @@
-# Safe CQL (Lagrangian) - 默认配置
+# Safe CQL — 调试档：复制自 safe_cql.yaml，缩短步数、加大 batch，便于 smoke / 小规模 sweep。
+# 正式实验请用 configs/agent/safe_cql.yaml。
 name: SafeCQL
 params:
   actor_lr: 1.0e-4
   critic_lr: 3.0e-4
   lagrangian_lr: 1.0e-3
-  cost_limit: 0.1          # 安全预算 (Innovation)
+  cost_limit: 0.1
   gamma: 0.99
   alpha_cql: 5.0
   target_update_interval: 2000
   n_critics: 2
-  n_steps: 50000
+  n_steps: 20000
   batch_size: 1024
 
 safety:
