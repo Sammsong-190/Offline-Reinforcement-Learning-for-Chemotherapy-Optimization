@@ -31,12 +31,40 @@ def main():
     ap.add_argument("--data-tag", default="", help="写入 CSV 备注列")
     ap.add_argument("-o", "--output-runs", default="results/multi_seed_runs.csv")
     ap.add_argument("-a", "--output-agg", default="results/multi_seed_agg.csv")
-    ap.add_argument("--n-ep", type=int, default=20)
+    ap.add_argument("--n-ep", type=int, default=20,
+                    help="default_x0 模式下每个 ckpt 的 rollout 条数；--tcga-clinical 时忽略（按 held-out 患者数每人 1 条）")
     ap.add_argument("--seeds", nargs="+", type=int, default=None,
                     help="若省略则扫描目录中全部 seed")
     ap.add_argument("--limits", nargs="+", type=float, default=None,
                     help="若省略则扫描目录中全部 limit")
+    ap.add_argument(
+        "--tcga-clinical",
+        type=Path,
+        default=None,
+        help="若指定则对 held-out TCGA digital twin  cohort 评估（需与构建 train/eval npz 时相同的 train-frac / split-seed）",
+    )
+    ap.add_argument("--train-frac", type=float, default=0.72)
+    ap.add_argument("--split-seed", type=int, default=42,
+                    help="与 build_tcga_twin_dataset.py --seed 一致，用于复现同一 eval 患者集")
+
     args = ap.parse_args()
+
+    from env.tcga_twins import load_tcga_twins_from_clinical, train_eval_split_twins
+
+    if args.tcga_clinical is not None:
+        twins_all = load_tcga_twins_from_clinical(Path(args.tcga_clinical))
+        _train_part, eval_twins = train_eval_split_twins(
+            twins_all, args.train_frac, args.split_seed
+        )
+        if not eval_twins:
+            print("TCGA split produced empty eval set; check train-frac / clinical path.")
+            return 1
+        print(
+            f"[TCGA eval] held-out patients: {len(eval_twins)} "
+            f"(train_frac={args.train_frac}, split_seed={args.split_seed})"
+        )
+    else:
+        eval_twins = None
 
     from src.evaluation import Evaluator, PyTorchAgent
 
@@ -56,10 +84,14 @@ def main():
         if seeds_f is not None and seed not in seeds_f:
             continue
         agent = PyTorchAgent(str(path), "safe_cql")
-        # 每个 checkpoint 用 n_ep 条不同子种子 rollout（避免 evaluate 里多 episode 共用同一 seed）
-        sub_seeds = [seed * 10000 + k for k in range(args.n_ep)]
-        m = evaluator.evaluate_agent(agent, n_episodes=1, seeds=sub_seeds)
-        rows.append({
+        if eval_twins is not None:
+            m = evaluator.evaluate_agent_on_twins(
+                agent, eval_twins, base_seed=seed)
+        else:
+            sub_seeds = [seed * 10000 + k for k in range(args.n_ep)]
+            m = evaluator.evaluate_agent(
+                agent, n_episodes=1, seeds=sub_seeds)
+        row = {
             "epsilon": lim,
             "seed": seed,
             "checkpoint": path.name,
@@ -67,8 +99,11 @@ def main():
             "return_std_episodes": m["return_std"],
             "avg_dose": m["avg_dose"],
             "constraint_violation_rate_pct": m["constraint_violation_rate_pct"],
+            "eval_mode": "tcga_heldout" if eval_twins is not None else "default_x0",
+            "n_eval_patients": m.get("n_eval_patients", 0),
             "data_tag": args.data_tag,
-        })
+        }
+        rows.append(row)
 
     if not rows:
         print("No matching checkpoints after filters.")

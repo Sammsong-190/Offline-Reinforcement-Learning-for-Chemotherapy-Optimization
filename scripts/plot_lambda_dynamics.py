@@ -20,6 +20,10 @@ def main():
     p.add_argument("--seed", type=int, default=42, help="与训练 --seed 一致")
     p.add_argument("--limits", nargs="+", type=float, default=DEFAULT_LIMITS)
     p.add_argument("-o", "--output", default="figures/lambda_dynamics.png")
+    p.add_argument(
+        "--title",
+        default="Lagrange multiplier dynamics across cost limits",
+    )
     args = p.parse_args()
 
     try:
@@ -51,9 +55,9 @@ def main():
         lambdas = [h["lambda"] for h in hist]
         ax.plot(steps, lambdas, label=f"ε={limit}", linewidth=1.5)
 
-    ax.set_xlabel("Training Steps", fontsize=12)
-    ax.set_ylabel("Lagrange Multiplier (λ)", fontsize=12)
-    ax.set_title("Figure A: Lagrange Multiplier Dynamics")
+    ax.set_xlabel("Training steps", fontsize=12)
+    ax.set_ylabel(r"Lagrange multiplier $\lambda$", fontsize=12)
+    ax.set_title(args.title, fontsize=12)
     ax.legend(loc="best", fontsize=9)
     ax.grid(True, alpha=0.3)
     ax.set_ylim(bottom=0)

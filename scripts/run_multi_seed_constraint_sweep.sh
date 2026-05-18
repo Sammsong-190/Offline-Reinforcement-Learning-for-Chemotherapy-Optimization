@@ -3,6 +3,7 @@
 #
 # 数据路径：优先环境变量 DATA，否则第一个参数，否则默认 NPZ。
 # 可选 AGENT_CONFIG（如 configs/agent/safe_cql_debug.yaml）传给 train.py。
+# SKIP_EXISTING=1：若 checkpoints/safe_cql_limit{ε}_seed{seed}.pt 已存在则跳过该组合。
 set -e
 cd "$(dirname "$0")/.."
 
@@ -21,10 +22,15 @@ if [ ! -f "$DATA" ]; then
 fi
 
 mkdir -p checkpoints results
-echo "data=$DATA  SEEDS=$SEEDS  LIMITS=$LIMITS  AGENT_CONFIG=${AGENT_CONFIG:-<default configs/agent/safe_cql.yaml>}"
+echo "data=$DATA  SEEDS=$SEEDS  LIMITS=$LIMITS  AGENT_CONFIG=${AGENT_CONFIG:-<default configs/agent/safe_cql.yaml>}  SKIP_EXISTING=${SKIP_EXISTING:-0}"
 
 for SEED in $SEEDS; do
   for LIMIT in $LIMITS; do
+    CKPT="checkpoints/safe_cql_limit${LIMIT}_seed${SEED}.pt"
+    if [ "${SKIP_EXISTING:-0}" = "1" ] && [ -f "$CKPT" ]; then
+      echo "=== skip (exists): ε=$LIMIT seed=$SEED → $CKPT ==="
+      continue
+    fi
     echo "=== train ε=$LIMIT seed=$SEED ==="
     python scripts/train.py --algo safe_cql --data "$DATA" --cost-limit "$LIMIT" \
       --seed "$SEED" --log-lambda 1000 "${AGENT_ARGS[@]}"

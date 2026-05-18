@@ -6,13 +6,13 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from data.generate import collect_trajectory, save_dataset  # noqa: E402
-from env.tcga_mapper import twin_from_row, tcga_behavior_policy  # noqa: E402
+from env.tcga_mapper import tcga_behavior_policy  # noqa: E402
+from env.tcga_twins import load_tcga_twins_from_clinical, train_eval_split_twins  # noqa: E402
 
 
 DEFAULT_CLINICAL = Path(
@@ -107,26 +107,7 @@ def main():
         print(f"[ERROR] Missing clinical file: {clinical_path}")
         return 1
 
-    df = pd.read_csv(clinical_path, sep="\t", dtype=str, low_memory=False)
-    df = df.drop_duplicates("cases.case_id", keep="first")
-
-    twins = []
-    for _, row in df.iterrows():
-        rd = row.to_dict()
-        result = twin_from_row(rd)
-        if result is None:
-            continue
-
-        x0, patient_ctx, meta = result
-        cid = rd.get("cases.case_id")
-        twins.append(
-            {
-                "case_id": cid,
-                "x0": x0,
-                "patient_ctx": patient_ctx,
-                "meta": meta,
-            }
-        )
+    twins = load_tcga_twins_from_clinical(clinical_path)
 
     print(f"[INFO] Twins with age+stage: {len(twins)} (after case dedup & filter).")
 
@@ -134,11 +115,9 @@ def main():
         print("[ERROR] No twins; check clinical.tsv columns and parsing.")
         return 1
 
-    rng = np.random.default_rng(args.seed)
-    idx = rng.permutation(len(twins))
-    n_train = int(len(twins) * args.train_frac)
-    train_twins = [twins[i] for i in idx[:n_train]]
-    eval_twins = [twins[i] for i in idx[n_train:]]
+    train_twins, eval_twins = train_eval_split_twins(
+        twins, args.train_frac, args.seed
+    )
 
     args.out_train.parent.mkdir(parents=True, exist_ok=True)
     args.out_eval.parent.mkdir(parents=True, exist_ok=True)

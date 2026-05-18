@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-实验 C：并排小提琴图 — 左：episode 平均 Q_C(s,a)；右：真实逐步违规率 true_cost_rate。
-也可 --scatter 画每步 episode 散点对比。
+实验 C：QC / safety critic 可视化。
+
+- 默认：并排小提琴图（episode 平均 Q_C vs 真实逐步违规率）。
+- --scatter：按 episode 索引 overlay 散点。
+- --calibration：x = 预测 Q_C episode 均值，y = true violation rate，每点一条轨迹
+  （TCGA held-out CSV 下每点一名患者）；可选最小二乘趋势线。
 """
 import argparse
 import csv
@@ -16,6 +20,12 @@ def main():
     ap.add_argument("-i", "--input", default="results/qc_mismatch_episodes.csv")
     ap.add_argument("-o", "--output", default="figures/qc_mismatch_violin.png")
     ap.add_argument("--scatter", action="store_true")
+    ap.add_argument("--calibration", action="store_true")
+    ap.add_argument(
+        "--title",
+        default="",
+        help="图总标题；--calibration 时默认 Safety critic calibration on held-out TCGA twins",
+    )
     args = ap.parse_args()
 
     try:
@@ -45,7 +55,33 @@ def main():
         print("No mean_qc_predicted in CSV")
         return 1
 
-    if args.scatter:
+    nunique_pred = len(np.unique(np.round(pred, 8)))
+    nunique_true = len(np.unique(np.round(true_rate, 8)))
+    if nunique_pred <= 1 and nunique_true <= 1:
+        print(
+            "Warning: all points identical (variance 0). "
+            "Default env rollouts may be deterministic; "
+            "re-run evaluate_mismatch.py with --tcga-clinical for per-patient spread.",
+            file=sys.stderr,
+        )
+
+    if args.calibration:
+        title = args.title or "Safety critic calibration on held-out TCGA twins"
+        fig, ax = plt.subplots(figsize=(6.5, 5.5))
+        ax.scatter(pred, true_rate, alpha=0.55, s=28, edgecolors="k", linewidths=0.3)
+        valid = np.isfinite(pred) & np.isfinite(true_rate)
+        px, ty = pred[valid], true_rate[valid]
+        if px.size >= 2 and np.std(px) > 1e-12:
+            coef = np.polyfit(px, ty, 1)
+            xs = np.linspace(float(np.min(px)), float(np.max(px)), 50)
+            ax.plot(xs, np.poly1d(coef)(xs), "r-", lw=1.8, alpha=0.85, label="OLS fit")
+            ax.legend(loc="best", fontsize=9)
+        ax.set_xlabel(r"Episode mean $Q_C(s,a)$ (predicted)", fontsize=11)
+        ax.set_ylabel("True per-step violation rate", fontsize=11)
+        ax.set_title(title, fontsize=12)
+        ax.grid(True, alpha=0.3)
+        ax.set_ylim(-0.02, max(1.02, float(np.max(true_rate)) * 1.05 + 0.02))
+    elif args.scatter:
         fig, ax = plt.subplots(figsize=(8, 5))
         ep = np.arange(len(pred))
         ax.scatter(ep, pred, alpha=0.45, s=14, label=r"Mean $Q_C$ / episode")
@@ -56,18 +92,19 @@ def main():
         ax.set_title(r"Predicted $Q_C$ vs true violation rate (per episode)")
         ax.grid(True, alpha=0.3)
     else:
+        mean_v = float(np.mean(true_rate))
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4), sharey=False)
         ax1.violinplot([pred], positions=[1], widths=0.6, showmeans=True, showmedians=True)
         ax1.set_xticks([1])
         ax1.set_xticklabels([r"$Q_C$ pred."])
         ax1.set_ylabel(r"Episode mean $Q_C(s,a)$")
-        ax1.set_title("Critic believes risk is high")
+        ax1.set_title("Predicted safety value (episode mean)")
         ax2.violinplot([true_rate], positions=[1], widths=0.6, showmeans=True, showmedians=True)
         ax2.set_xticks([1])
         ax2.set_xticklabels(["True rate"])
-        ax2.set_ylabel("Fraction of steps with c=1")
-        ax2.set_title("Environment: near-zero violations")
-        fig.suptitle("Mismatch: conservative critic vs safe rollout")
+        ax2.set_ylabel("Fraction of steps with cost = 1")
+        ax2.set_title(f"Observed violation rate (mean = {mean_v:.3f})")
+        fig.suptitle("Safety critic vs environment rollout")
         fig.tight_layout()
 
     out = ROOT / args.output

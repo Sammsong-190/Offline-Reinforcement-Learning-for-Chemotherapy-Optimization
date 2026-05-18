@@ -6,23 +6,32 @@ venv/
 *.egg-info/
 .pytest_cache/
 
-# Data & models
+# Data & models (versioned outputs: exceptions under results/ + checkpoints/)
 *.npz
 *.csv
+!results/
+!results/*.csv
 *.pt
+!checkpoints/
+!checkpoints/*.pt
 *.d3
+!checkpoints/
+!checkpoints/*.d3
 bc_policy.pt
 cql_model.d3
 offline_dataset.*
 
 # Logs
 d3rlpy_logs/
+logs/
 
-# Experiment outputs
+# Experiment outputs (legacy path only)
 experiments/results/
 experiments/figures/
-results/
-figures/
+
+# Local backups / stray CLI artifacts
+.venv-py38.backup/
+--log-lambda
 
 # IDE
 .idea/
@@ -31,5 +40,4 @@ figures/
 
 # OS / local artifacts
 .DS_Store
-checkpoints/
 step*_*.png

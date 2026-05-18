@@ -193,6 +193,10 @@ class SafeCQL(BaseAlgo):
         term = torch.FloatTensor(buf.done | buf.timeout).unsqueeze(1).to(self.device)
 
         lambda_history = [] if log_lambda_every > 0 else None
+        log_path = None
+        if lambda_history is not None:
+            log_path = Path(save_path).with_name(
+                Path(save_path).stem + "_lambda.json")
 
         def sample():
             idx = torch.randint(
@@ -214,6 +218,13 @@ class SafeCQL(BaseAlgo):
                     "q_c_mse": losses.get("q_c_mse", 0),
                     "cql_cost_penalty": losses.get("cql_cost_penalty", 0),
                 })
+                if log_path is not None:
+                    import json
+                    with open(log_path, "w", encoding="utf-8") as f:
+                        json.dump(
+                            {"cost_limit": self.cost_limit, "history": lambda_history},
+                            f, indent=0,
+                        )
             if need_print:
                 risk = losses.get("current_risk", 0)
                 print(f"  step {step+1}: λ={losses['lambda']:.2f} Q_C(π)={risk:.4f} (limit={self.cost_limit}) "
@@ -272,7 +283,9 @@ class SafeCQL(BaseAlgo):
             if s_norm.ndim == 1:
                 s_norm = s_norm.reshape(1, -1)
             with torch.no_grad():
-                a_idx = self.actor(torch.FloatTensor(s_norm)).argmax(-1).item()
+                x = torch.as_tensor(
+                    s_norm, dtype=torch.float32, device=self.device)
+                a_idx = self.actor(x).argmax(-1).item()
             return float(self.action_values[a_idx])
 
         return policy

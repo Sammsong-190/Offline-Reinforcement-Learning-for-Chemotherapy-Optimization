@@ -126,6 +126,7 @@ def _rollout_one(
     """
     单次 rollout。务必传入 patient_ctx（dict 或每局可调用的 factory），
     以便用队列特异 i_safe / c_tox / n_safe 判定终止与违规；None 时与旧版 is_done 一致。
+    若 patient_ctx 为 dict 且含键 "x0"（如 TCGA twin 初态），则用其初始化状态，否则用全局 X0。
     """
     if seed is not None:
         from env.robust import set_seed
@@ -148,10 +149,13 @@ def _rollout_one(
         dyn_params = params
         sde_sigma = 0.0
 
-    x = np.array(X0, dtype=np.float32)
+    if ctx is not None and ctx.get("x0") is not None:
+        x = np.asarray(ctx["x0"], dtype=np.float32).copy()
+    else:
+        x = np.array(X0, dtype=np.float32)
     R, actions, violation_steps = 0.0, [], 0
     qc_preds = []
-    tumor_start = float(X0[1])
+    tumor_start = float(x[1])
     survival_steps = MAX_STEPS
     termination_reason = "timeout"
 
@@ -266,6 +270,84 @@ class Evaluator:
             base["mean_qc_predicted_std"] = float(
                 np.nanstd([x.get("mean_qc_predicted", np.nan) for x in all_metrics]))
         return base
+
+    def evaluate_agent_on_twins(
+        self,
+        agent: Agent,
+        twins: List[dict],
+        base_seed: int = 0,
+    ) -> dict:
+        """
+        在多个 TCGA digital twin（各自 x0 + patient_ctx，含 SDE σ）上各 rollout 一次，
+        聚合指标；用于 held-out 患者上与默认 X0 评估区分。
+        """
+        all_metrics = []
+        for i, twin in enumerate(twins):
+            ctx = {**twin["patient_ctx"], "x0": twin["x0"]}
+            ep_seed = int(base_seed) * 100000 + i * 10007
+            m = _rollout_one(
+                agent,
+                self.params,
+                seed=ep_seed,
+                randomize_patient=False,
+                patient_ctx=ctx,
+            )
+            all_metrics.append(m)
+
+        reasons = list({x["termination_reason"] for x in all_metrics})
+        base = {
+            "return_mean": float(np.mean([x["return"] for x in all_metrics])),
+            "return_std": float(np.std([x["return"] for x in all_metrics])),
+            "tumor_clear_pct": float(np.mean([x["tumor_clear_pct"] for x in all_metrics])),
+            "survival_pct": float(np.mean([x["survival_pct"] for x in all_metrics])),
+            "avg_dose": float(np.mean([x["avg_dose"] for x in all_metrics])),
+            "constraint_violation_rate_pct": float(
+                np.mean([x["constraint_violation_rate_pct"] for x in all_metrics])),
+            "treatment_efficiency": float(
+                np.mean([x["treatment_efficiency"] for x in all_metrics])),
+            "survival_steps_mean": float(
+                np.mean([x["survival_steps"] for x in all_metrics])),
+            "survival_steps_std": float(
+                np.std([x["survival_steps"] for x in all_metrics])),
+            "survival_time_mean": float(
+                np.mean([x["survival_time"] for x in all_metrics])),
+            "n_eval_patients": len(all_metrics),
+        }
+        for r in reasons:
+            base[f"frac_{r}"] = float(
+                np.mean([x["termination_reason"] == r for x in all_metrics]))
+        if all_metrics and "mean_qc_predicted" in all_metrics[0]:
+            base["mean_qc_predicted"] = float(
+                np.nanmean([x.get("mean_qc_predicted", np.nan) for x in all_metrics]))
+            base["mean_qc_predicted_std"] = float(
+                np.nanstd([x.get("mean_qc_predicted", np.nan) for x in all_metrics]))
+        return base
+
+    def mismatch_rollouts_on_twins(
+        self,
+        agent: Agent,
+        twins: List[dict],
+        base_seed: int = 0,
+    ) -> List[dict]:
+        """
+        每个 held-out twin 一次 rollout，逐条指标（含 mean_qc_predicted、true_cost_rate），
+        用于 critic calibration / QC mismatch 散点图；seed 与 evaluate_agent_on_twins 一致。
+        """
+        rows: List[dict] = []
+        for i, twin in enumerate(twins):
+            ctx = {**twin["patient_ctx"], "x0": twin["x0"]}
+            ep_seed = int(base_seed) * 100000 + i * 10007
+            m = _rollout_one(
+                agent,
+                self.params,
+                seed=ep_seed,
+                randomize_patient=False,
+                patient_ctx=ctx,
+            )
+            m["episode"] = i
+            m["case_id"] = str(twin.get("case_id") or "")
+            rows.append(m)
+        return rows
 
     def episode_rollouts(
         self,

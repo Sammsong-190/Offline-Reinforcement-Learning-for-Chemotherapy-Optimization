@@ -1,0 +1,10 @@
+epsilon,seed,checkpoint,return_mean,return_std_episodes,avg_dose,constraint_violation_rate_pct,data_tag
+0.0,1200,safe_cql_limit0.0_seed1200.pt,-261.69318060279045,0.0,0.0,0.0,tcga_twin_debug
+0.0,15,safe_cql_limit0.0_seed15.pt,-261.69318060279045,0.0,0.0,0.0,tcga_twin_debug
+0.0,500,safe_cql_limit0.0_seed500.pt,-207.3861944789302,0.0,1.0,0.0,tcga_twin_debug
+0.1,1200,safe_cql_limit0.1_seed1200.pt,-261.69318060279045,0.0,0.0,0.0,tcga_twin_debug
+0.1,15,safe_cql_limit0.1_seed15.pt,-48.61098104440657,0.0,1.520833333333333,35.416666666666664,tcga_twin_debug
+0.1,500,safe_cql_limit0.1_seed500.pt,-207.3861944789302,0.0,1.0,0.0,tcga_twin_debug
+0.3,1200,safe_cql_limit0.3_seed1200.pt,-207.3861944789302,0.0,1.0,0.0,tcga_twin_debug
+0.3,15,safe_cql_limit0.3_seed15.pt,-160.44672886455447,5.684341886080802e-14,1.416666666666667,0.0,tcga_twin_debug
+0.3,500,safe_cql_limit0.3_seed500.pt,-41.94741626748354,7.105427357601002e-15,1.7749999999999997,42.5,tcga_twin_debug
